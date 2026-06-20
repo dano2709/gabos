@@ -1,733 +1,267 @@
-(function () {
+(() => {
   'use strict';
 
-  const LOGIN_ID = 'gabby';
-  const LOGIN_PASS = '1234';
-  const STORAGE_KEY = 'diplomaez_progress_all_questions_v1';
-  const TOPICS = Array.isArray(window.DIPLOMAEZ_TOPICS) ? window.DIPLOMAEZ_TOPICS : [];
+  const BASE_TOPICS = Array.isArray(window.DIPLOMAEZ_TOPICS) ? window.DIPLOMAEZ_TOPICS : [];
+  const VERSION = 'panel-7day-v1';
+  const TOPICS_KEY = 'diplomaez_topics_' + VERSION;
+  const PROGRESS_KEY = 'diplomaez_progress_' + VERSION;
+  const PANEL_KEY = 'diplomaez_panel_collapsed';
+  const REVIEW_MS = 7 * 24 * 60 * 60 * 1000;
 
-  const ui = {};
-  const state = {
-    loggedIn: false,
-    modalOpen: false,
-    started: false,
-    keys: {},
-    dpr: 1,
-    world: { w: 3000, h: 1900 },
-    player: { x: 1500, y: 950, speed: 280, step: 0 },
-    camera: { x: 1500, y: 950 },
-    nearest: null,
-    last: 0,
-    portals: [],
-    grass: [],
-    progress: loadProgress()
-  };
+  let ui = {}, started = false, logged = false, modalOpen = false, activePanel = 'stats';
+  let keys = {}, nearest = null, last = 0, dpr = 1;
+  let panelCollapsed = localStorage.getItem(PANEL_KEY) === 'yes';
+  let topics = loadTopics();
+  let progress = loadProgress();
+  let world = { w: 3200, h: 2100 };
+  let player = { x: 1550, y: 980, v: 285, step: 0 };
+  let camera = { x: 1550, y: 980 };
+  let portals = [], grass = [];
 
-  document.addEventListener('DOMContentLoaded', init);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 
   function init() {
     ui.canvas = document.getElementById('gameCanvas');
     ui.ctx = ui.canvas.getContext('2d');
-
-    ui.loginScreen = document.getElementById('loginScreen');
+    ui.login = document.getElementById('loginScreen');
     ui.loginId = document.getElementById('loginId');
     ui.loginPass = document.getElementById('loginPass');
-    ui.loginButton = document.getElementById('loginButton');
+    ui.loginBtn = document.getElementById('loginButton');
     ui.loginError = document.getElementById('loginError');
-
     ui.hud = document.getElementById('hud');
-    ui.sidePanel = document.getElementById('sidePanel');
-    ui.topicList = document.getElementById('topicList');
-    ui.portalPrompt = document.getElementById('portalPrompt');
-
+    ui.prompt = document.getElementById('portalPrompt');
     ui.modal = document.getElementById('modal');
     ui.modalContent = document.getElementById('modalContent');
-
-    ui.scoreText = document.getElementById('scoreText');
-    ui.progressText = document.getElementById('progressText');
-    ui.streakText = document.getElementById('streakText');
+    ui.score = document.getElementById('scoreText');
+    ui.progress = document.getElementById('progressText');
+    ui.streak = document.getElementById('streakText');
     ui.toast = document.getElementById('toast');
+    const oldSide = document.getElementById('sidePanel');
+    if (oldSide) oldSide.classList.add('hidden');
 
+    createPanel();
     buildWorld();
     resize();
     updateHud();
-    renderTopicList();
+    renderPanel();
     draw(0);
 
-    ui.loginButton.addEventListener('click', doLogin);
-    ui.loginId.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') ui.loginPass.focus();
-    });
-    ui.loginPass.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') doLogin();
-    });
-
-    ui.modal.addEventListener('click', (event) => {
-      if (event.target === ui.modal) closeModal();
-    });
-
+    ui.loginBtn.onclick = login;
+    ui.loginId.onkeydown = e => { if (e.key === 'Enter') ui.loginPass.focus(); };
+    ui.loginPass.onkeydown = e => { if (e.key === 'Enter') login(); };
+    ui.modal.onclick = e => { if (e.target === ui.modal) closeModal(); };
     window.addEventListener('resize', resize);
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', (event) => {
-      state.keys[event.key.toLowerCase()] = false;
-    });
-
-    if (!TOPICS.length) {
-      ui.loginError.textContent = 'Questions could not be loaded. Check questions.js.';
-      ui.loginButton.disabled = true;
-    }
-
+    window.addEventListener('keydown', keyDown);
+    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
     setTimeout(() => ui.loginId.focus(), 100);
   }
 
-  function doLogin() {
-    const id = ui.loginId.value.trim().toLowerCase();
-    const pass = ui.loginPass.value.trim();
-
-    if (id === LOGIN_ID && pass === LOGIN_PASS) {
-      state.loggedIn = true;
-      ui.loginError.textContent = '';
-      ui.loginScreen.classList.add('hidden');
-      ui.hud.classList.remove('hidden');
-      ui.sidePanel.classList.remove('hidden');
-      toast('Welcome, Gabby.');
-
-      if (!state.started) {
-        state.started = true;
-        requestAnimationFrame(loop);
-      }
-      return;
-    }
-
-    ui.loginError.textContent = 'Wrong ID or password.';
-  }
-
-  function onKeyDown(event) {
-    state.keys[event.key.toLowerCase()] = true;
-
-    if (event.key === 'Escape' && state.modalOpen) {
-      closeModal();
-      return;
-    }
-
-    if (!state.loggedIn || state.modalOpen) return;
-
-    const key = event.key.toLowerCase();
-    if (key === 'e' && state.nearest) openPortal(state.nearest.index);
-    if (key === 't') openStats();
-    if (key === 'h') openHelp();
-  }
-
-  function buildWorld() {
-    const columns = 5;
-    const horizontalGap = 540;
-    const verticalGap = 360;
-    const colors = ['#8eff87', '#ffa7eb', '#82efff', '#ffe27f', '#c59cff', '#ffb089', '#77fff3', '#a2b7ff', '#ff92bd'];
-
-    state.portals = TOPICS.map((topic, index) => ({
-      index,
-      title: topic.title,
-      x: 310 + (index % columns) * horizontalGap,
-      y: 280 + Math.floor(index / columns) * verticalGap,
-      color: colors[index % colors.length]
+  function normalize(list) {
+    return (list || []).map(t => ({
+      title: String(t.title || 'Untitled Portal'),
+      questions: (t.questions || []).map(q => ({ question: String(q.question || ''), answer: String(q.answer || '') }))
     }));
-
-    let seed = 24681357;
-    function rand() {
-      seed = (seed * 1664525 + 1013904223) >>> 0;
-      return seed / 4294967296;
-    }
-
-    state.grass = [];
-    for (let i = 0; i < 320; i++) {
-      state.grass.push({
-        x: 130 + rand() * (state.world.w - 260),
-        y: 130 + rand() * (state.world.h - 260),
-        h: 12 + rand() * 30,
-        phase: rand() * Math.PI * 2,
-        color: rand() > 0.22 ? '#7cee72' : '#dd7d86'
-      });
-    }
   }
-
+  function loadTopics() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(TOPICS_KEY) || 'null');
+      if (saved && Array.isArray(saved.topics)) return saved.topics;
+    } catch {}
+    return normalize(BASE_TOPICS);
+  }
+  function saveTopics() {
+    localStorage.setItem(TOPICS_KEY, JSON.stringify({ topics }));
+    buildWorld();
+    updateHud();
+    renderPanel();
+  }
   function loadProgress() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch (error) {
-      console.warn('Could not load progress:', error);
-    }
+      const saved = JSON.parse(localStorage.getItem(PROGRESS_KEY) || 'null');
+      if (saved) return Object.assign(blankProgress(), saved);
+    } catch {}
+    return blankProgress();
+  }
+  function blankProgress() { return { score: 0, streak: 0, best: 0, done: {}, wrong: {}, reviewAt: {}, answers: {}, attempts: {}, correct: 0, total: 0 }; }
+  function saveProgress() { localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress)); }
+  function qid(ti, qi) { return ti + '_' + qi; }
+  function totalQuestions() { return topics.reduce((a, t) => a + t.questions.length, 0); }
+  function solvedCount() { return Object.keys(progress.done).length; }
+  function topicSolved(ti) { return topics[ti].questions.filter((_, qi) => progress.done[qid(ti, qi)]).length; }
+  function topicWrong(ti) { return topics[ti].questions.filter((_, qi) => progress.wrong[qid(ti, qi)] && !progress.done[qid(ti, qi)]).length; }
+  function topicAvailable(ti) { const now = Date.now(); return topics[ti].questions.filter((_, qi) => { const id = qid(ti, qi); return !progress.done[id] && (!progress.reviewAt[id] || progress.reviewAt[id] <= now); }).length; }
+  function stats() {
+    const now = Date.now();
+    const wrong = Object.keys(progress.wrong).filter(id => !progress.done[id]).length;
+    const scheduled = Object.keys(progress.reviewAt).filter(id => !progress.done[id] && progress.reviewAt[id] > now).length;
+    const due = Object.keys(progress.reviewAt).filter(id => !progress.done[id] && progress.reviewAt[id] <= now).length;
+    const attempts = Object.keys(progress.attempts).length;
+    const accuracy = progress.total ? Math.round(progress.correct / progress.total * 100) : 0;
+    return { wrong, scheduled, due, attempts, accuracy, solved: solvedCount(), total: totalQuestions() };
+  }
 
-    return {
-      score: 0,
-      streak: 0,
-      bestStreak: 0,
-      done: {},
-      wrong: {},
-      answers: {},
-      attempts: {}
+  function login() {
+    const id = ui.loginId.value.trim().toLowerCase();
+    const pass = ui.loginPass.value.trim();
+    if (id === 'gabby' && pass === '1234') {
+      logged = true;
+      ui.login.classList.add('hidden');
+      ui.hud.classList.remove('hidden');
+      ui.panel.classList.remove('hidden');
+      toast('Welcome, Gabby.');
+      if (!started) { started = true; requestAnimationFrame(loop); }
+    } else ui.loginError.textContent = 'Wrong ID or password.';
+  }
+
+  function createPanel() {
+    const panel = document.createElement('aside');
+    panel.id = 'commandPanel';
+    panel.className = 'command-panel hidden' + (panelCollapsed ? ' collapsed' : '');
+    panel.innerHTML = `
+      <div class="panel-brand"><div class="brand-mark">D</div><strong class="brand-title">DiplomaEZ</strong><button id="collapsePanelBtn" class="icon-btn">⇤</button></div>
+      <nav class="panel-nav">
+        <button class="nav-item active" data-panel="stats" data-tooltip="Stats"><span class="nav-icon">◎</span><span class="nav-text">Player stats</span></button>
+        <button class="nav-item" data-panel="portals" data-tooltip="Portals"><span class="nav-icon">▦</span><span class="nav-text">Portals</span></button>
+        <button class="nav-item" data-panel="help" data-tooltip="Help"><span class="nav-icon">?</span><span class="nav-text">Help</span></button>
+      </nav><div class="panel-divider"></div><div id="panelBody" class="panel-body"></div>`;
+    document.body.appendChild(panel);
+    ui.panel = panel;
+    ui.panelBody = panel.querySelector('#panelBody');
+    panel.querySelector('#collapsePanelBtn').onclick = () => {
+      panelCollapsed = !panelCollapsed;
+      localStorage.setItem(PANEL_KEY, panelCollapsed ? 'yes' : 'no');
+      panel.classList.toggle('collapsed', panelCollapsed);
     };
+    panel.querySelectorAll('.nav-item').forEach(b => b.onclick = () => { activePanel = b.dataset.panel; renderPanel(); });
   }
-
-  function saveProgress() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.progress));
+  function renderPanel() {
+    if (!ui.panel) return;
+    ui.panel.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.panel === activePanel));
+    if (activePanel === 'stats') renderStatsPanel();
+    if (activePanel === 'portals') renderPortalsPanel();
+    if (activePanel === 'help') renderHelpPanel();
   }
-
-  function qid(topicIndex, questionIndex) {
-    return `${topicIndex}_${questionIndex}`;
+  function renderStatsPanel() {
+    const s = stats();
+    ui.panelBody.innerHTML = `<div class="panel-section-title">Player overview</div><div class="stat-grid">
+      <div class="stat-card"><span>Score</span><strong>${progress.score}</strong></div><div class="stat-card"><span>Solved</span><strong>${s.solved}/${s.total}</strong></div>
+      <div class="stat-card"><span>Streak</span><strong>${progress.streak}</strong></div><div class="stat-card"><span>Best</span><strong>${progress.best || 0}</strong></div>
+      <div class="stat-card"><span>Wrong</span><strong>${s.wrong}</strong></div><div class="stat-card"><span>7-day review</span><strong>${s.scheduled}</strong></div>
+      <div class="stat-card"><span>Due now</span><strong>${s.due}</strong></div><div class="stat-card"><span>Accuracy</span><strong>${s.accuracy}%</strong></div></div>
+      <button class="panel-action" id="openStatsBtn">Open detailed stats</button>`;
+    document.getElementById('openStatsBtn').onclick = openStats;
   }
-
-  function totalQuestions() {
-    return TOPICS.reduce((sum, topic) => sum + topic.questions.length, 0);
-  }
-
-  function solvedCount() {
-    return Object.keys(state.progress.done).length;
-  }
-
-  function topicSolved(topicIndex) {
-    return TOPICS[topicIndex].questions.filter((_, questionIndex) => state.progress.done[qid(topicIndex, questionIndex)]).length;
-  }
-
-  function topicWrong(topicIndex) {
-    return TOPICS[topicIndex].questions.filter((_, questionIndex) => {
-      const id = qid(topicIndex, questionIndex);
-      return state.progress.wrong[id] && !state.progress.done[id];
-    }).length;
-  }
-
-  function updateHud() {
-    ui.scoreText.textContent = `Score ${state.progress.score}`;
-    ui.progressText.textContent = `Solved ${solvedCount()}/${totalQuestions()}`;
-    ui.streakText.textContent = `Streak ${state.progress.streak}`;
-  }
-
-  function renderTopicList() {
-    ui.topicList.innerHTML = '';
-
-    TOPICS.forEach((topic, index) => {
-      const solved = topicSolved(index);
-      const row = document.createElement('div');
-      row.className = 'topic-row';
-
-      const left = document.createElement('div');
-      left.innerHTML = `<strong>${escapeHtml(topic.title)}</strong><div class="muted">${topic.questions.length} questions</div>`;
-
-      const right = document.createElement('span');
-      right.className = 'pill' + (solved === topic.questions.length ? ' done' : '');
-      right.textContent = solved === topic.questions.length ? 'Cleared' : `${topic.questions.length - solved} left`;
-
-      row.appendChild(left);
-      row.appendChild(right);
-      ui.topicList.appendChild(row);
+  function renderPortalsPanel() {
+    ui.panelBody.innerHTML = `<div class="panel-topline"><div class="panel-section-title">Portals</div><button class="mini-btn" id="addPortalBtn">+ Portal</button></div><div id="portalEditorList" class="portal-editor-list"></div><button class="panel-action danger-action" id="resetQuestionsBtn">Reset edited portals</button>`;
+    document.getElementById('addPortalBtn').onclick = addPortal;
+    document.getElementById('resetQuestionsBtn').onclick = resetTopics;
+    const list = document.getElementById('portalEditorList');
+    topics.forEach((t, ti) => {
+      const d = document.createElement('details');
+      d.className = 'portal-details';
+      d.innerHTML = `<summary><span><strong>${esc(t.title)}</strong><small>${t.questions.length} questions • ${topicSolved(ti)} solved • ${topicWrong(ti)} wrong</small></span><span class="summary-caret">⌄</span></summary><div class="portal-tools"><button class="mini-btn" data-a="editp">Edit portal</button><button class="mini-btn" data-a="addq">+ Question</button><button class="mini-btn" data-a="play">Play</button></div><div class="question-list"></div>`;
+      d.querySelector('[data-a="editp"]').onclick = () => editPortal(ti);
+      d.querySelector('[data-a="addq"]').onclick = () => editQuestion(ti, -1);
+      d.querySelector('[data-a="play"]').onclick = () => openPortal(ti);
+      const ql = d.querySelector('.question-list');
+      t.questions.forEach((q, qi) => {
+        const b = document.createElement('button');
+        b.className = 'question-row';
+        b.innerHTML = `<span>${qi + 1}. ${esc(short(q.question || 'Empty question', 58))}</span><em>${status(qid(ti, qi))}</em>`;
+        b.onclick = () => editQuestion(ti, qi);
+        ql.appendChild(b);
+      });
+      list.appendChild(d);
     });
   }
-
-  function resize() {
-    state.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    ui.canvas.width = Math.floor(window.innerWidth * state.dpr);
-    ui.canvas.height = Math.floor(window.innerHeight * state.dpr);
-    ui.canvas.style.width = `${window.innerWidth}px`;
-    ui.canvas.style.height = `${window.innerHeight}px`;
+  function renderHelpPanel() {
+    ui.panelBody.innerHTML = `<div class="panel-section-title">Controls</div><div class="help-line"><b>WASD / arrows</b><span>Move around map</span></div><div class="help-line"><b>E / Enter</b><span>Enter nearest portal</span></div><div class="help-line"><b>T</b><span>Statistics</span></div><div class="help-line"><b>H</b><span>Help</span></div><div class="panel-section-title spaced">7-day review</div><p class="muted small-copy">When an answer is correct, you can mark it solved forever or schedule it to appear again after 7 days.</p>`;
   }
 
-  function loop(timestamp) {
-    const dt = Math.min(0.033, (timestamp - state.last) / 1000 || 0.016);
-    state.last = timestamp;
-
-    update(dt);
-    draw(timestamp / 1000);
-    requestAnimationFrame(loop);
+  function status(id) {
+    const now = Date.now();
+    if (progress.done[id]) return 'Done';
+    if (progress.reviewAt[id] > now) return 'Review ' + inTime(progress.reviewAt[id] - now);
+    if (progress.reviewAt[id] && progress.reviewAt[id] <= now) return 'Due';
+    if (progress.wrong[id]) return 'Wrong';
+    return 'Ready';
+  }
+  function addPortal() {
+    showModal(`<h2>Add New Portal</h2><label>Portal name</label><input id="portalTitleInput" placeholder="New topic"><button class="btn primary" data-a="save">Create Portal</button><button class="btn secondary" data-a="cancel">Cancel</button>`);
+    ui.modalContent.querySelector('[data-a="save"]').onclick = () => { const title = document.getElementById('portalTitleInput').value.trim(); if (!title) return toast('Portal name is required.'); topics.push({ title, questions: [] }); saveTopics(); closeModal(); activePanel = 'portals'; renderPanel(); toast('Portal added.'); };
+    ui.modalContent.querySelector('[data-a="cancel"]').onclick = closeModal;
+  }
+  function editPortal(ti) {
+    const t = topics[ti];
+    showModal(`<h2>Edit Portal</h2><label>Portal name</label><input id="portalTitleInput" value="${esc(t.title)}"><button class="btn primary" data-a="save">Save Portal</button><button class="btn secondary" data-a="cancel">Cancel</button>`);
+    ui.modalContent.querySelector('[data-a="save"]').onclick = () => { const title = document.getElementById('portalTitleInput').value.trim(); if (!title) return toast('Portal name is required.'); t.title = title; saveTopics(); closeModal(); renderPanel(); toast('Portal saved.'); };
+    ui.modalContent.querySelector('[data-a="cancel"]').onclick = closeModal;
+  }
+  function editQuestion(ti, qi) {
+    const isNew = qi < 0, t = topics[ti], q = isNew ? { question: '', answer: '' } : t.questions[qi];
+    showModal(`<h2>${isNew ? 'Add Question' : 'Edit Question'}</h2><p class="muted">Portal: ${esc(t.title)}</p><label>Question</label><textarea id="questionEdit">${esc(q.question)}</textarea><label>Correct answer</label><textarea id="answerEdit">${esc(q.answer)}</textarea><button class="btn primary" data-a="save">${isNew ? 'Add Question' : 'Save Question'}</button><button class="btn secondary" data-a="cancel">Cancel</button>`);
+    ui.modalContent.querySelector('[data-a="save"]').onclick = () => { const nq = document.getElementById('questionEdit').value.trim(), na = document.getElementById('answerEdit').value.trim(); if (!nq) return toast('Question text is required.'); if (isNew) t.questions.push({ question: nq, answer: na }); else { q.question = nq; q.answer = na; } saveTopics(); closeModal(); renderPanel(); toast(isNew ? 'Question added.' : 'Question saved.'); };
+    ui.modalContent.querySelector('[data-a="cancel"]').onclick = closeModal;
+  }
+  function resetTopics() {
+    if (!confirm('Reset all edited portals/questions to the original uploaded pack?')) return;
+    localStorage.removeItem(TOPICS_KEY); topics = normalize(BASE_TOPICS); saveTopics(); renderPanel(); toast('Questions reset.');
   }
 
+  function keyDown(e) {
+    keys[e.key.toLowerCase()] = true;
+    if (e.key === 'Escape' && modalOpen) return closeModal();
+    if (!logged || modalOpen) return;
+    const k = e.key.toLowerCase();
+    if ((k === 'e' || k === 'enter') && nearest) openPortal(nearest.index);
+    if (k === 't') openStats();
+    if (k === 'h') openHelp();
+  }
+  function buildWorld() {
+    const cols = 5, gx = 560, gy = 370, rows = Math.ceil(Math.max(1, topics.length) / cols);
+    world.w = Math.max(3200, 360 + (cols - 1) * gx + 420); world.h = Math.max(2100, 340 + (rows - 1) * gy + 500);
+    const colors = ['#8eff87', '#ffa7eb', '#82efff', '#ffe27f', '#c59cff', '#ffb089', '#77fff3', '#a2b7ff', '#ff92bd'];
+    portals = topics.map((t, i) => ({ index: i, title: t.title, x: 330 + (i % cols) * gx, y: 300 + Math.floor(i / cols) * gy, color: colors[i % colors.length] }));
+    let seed = 24681357; const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    grass = []; for (let i = 0; i < 350; i++) grass.push({ x: 130 + rand() * (world.w - 260), y: 130 + rand() * (world.h - 260), h: 12 + rand() * 30, p: rand() * 7, c: rand() > .22 ? '#7cee72' : '#dd7d86' });
+  }
+  function updateHud() { const s = stats(); ui.score.textContent = 'Score ' + progress.score; ui.progress.textContent = `Solved ${s.solved}/${s.total} • Review ${s.scheduled}`; ui.streak.textContent = 'Streak ' + progress.streak; }
+  function resize() { dpr = Math.min(devicePixelRatio || 1, 1.5); ui.canvas.width = innerWidth * dpr; ui.canvas.height = innerHeight * dpr; ui.canvas.style.width = innerWidth + 'px'; ui.canvas.style.height = innerHeight + 'px'; }
+  function loop(ts) { const dt = Math.min(.033, (ts - last) / 1000 || .016); last = ts; update(dt); draw(ts / 1000); requestAnimationFrame(loop); }
   function update(dt) {
-    if (!state.loggedIn || state.modalOpen) return;
-
-    let dx = 0;
-    let dy = 0;
-
-    if (state.keys.w || state.keys.arrowup) dy -= 1;
-    if (state.keys.s || state.keys.arrowdown) dy += 1;
-    if (state.keys.a || state.keys.arrowleft) dx -= 1;
-    if (state.keys.d || state.keys.arrowright) dx += 1;
-
-    const length = Math.hypot(dx, dy) || 1;
-    if (dx || dy) {
-      state.player.x = clamp(state.player.x + dx / length * state.player.speed * dt, 120, state.world.w - 120);
-      state.player.y = clamp(state.player.y + dy / length * state.player.speed * dt, 120, state.world.h - 120);
-      state.player.step += dt * 9;
-    }
-
-    state.camera.x += (state.player.x - state.camera.x) * 0.09;
-    state.camera.y += (state.player.y - state.camera.y) * 0.09;
-
-    let nearest = null;
-    let bestDistance = Infinity;
-
-    state.portals.forEach((portal) => {
-      const distance = Math.hypot(portal.x - state.player.x, portal.y - state.player.y);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        nearest = portal;
-      }
-    });
-
-    if (nearest && bestDistance < 132) {
-      state.nearest = nearest;
-      ui.portalPrompt.textContent = `Press E to enter ${nearest.title}`;
-      ui.portalPrompt.classList.remove('hidden');
-    } else {
-      state.nearest = null;
-      ui.portalPrompt.classList.add('hidden');
-    }
+    if (!logged || modalOpen) return;
+    let dx = 0, dy = 0; if (keys.w || keys.arrowup) dy--; if (keys.s || keys.arrowdown) dy++; if (keys.a || keys.arrowleft) dx--; if (keys.d || keys.arrowright) dx++;
+    const l = Math.hypot(dx, dy) || 1; if (dx || dy) { player.x = clamp(player.x + dx / l * player.v * dt, 120, world.w - 120); player.y = clamp(player.y + dy / l * player.v * dt, 120, world.h - 120); player.step += dt * 9; }
+    camera.x += (player.x - camera.x) * .09; camera.y += (player.y - camera.y) * .09;
+    let best = Infinity; nearest = null; portals.forEach(p => { const dist = Math.hypot(p.x - player.x, p.y - player.y); if (dist < best) { best = dist; nearest = p; } });
+    if (nearest && best < 132) { ui.prompt.textContent = 'Press E / Enter to enter ' + nearest.title; ui.prompt.classList.remove('hidden'); } else { nearest = null; ui.prompt.classList.add('hidden'); }
   }
-
-  function draw(time) {
-    const ctx = ui.ctx;
-    const dpr = state.dpr;
-    const width = ui.canvas.width;
-    const height = ui.canvas.height;
-
-    ctx.clearRect(0, 0, width, height);
-
-    const bg = ctx.createLinearGradient(0, 0, 0, height);
-    bg.addColorStop(0, '#88c816');
-    bg.addColorStop(0.55, '#3f641a');
-    bg.addColorStop(1, '#13230e');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, width, height);
-
-    ctx.save();
-    ctx.scale(dpr, dpr);
-    ctx.translate(-(state.camera.x - window.innerWidth / 2), -(state.camera.y - window.innerHeight / 2));
-
-    drawMap(ctx);
-    drawGrass(ctx, time);
-    state.portals.forEach((portal) => drawPortal(ctx, portal, time));
-    drawPlayer(ctx, time);
-
-    ctx.restore();
+  function draw(t) {
+    const c = ui.ctx; c.clearRect(0, 0, ui.canvas.width, ui.canvas.height); const bg = c.createLinearGradient(0, 0, 0, ui.canvas.height); bg.addColorStop(0, '#88c816'); bg.addColorStop(.55, '#3f641a'); bg.addColorStop(1, '#13230e'); c.fillStyle = bg; c.fillRect(0, 0, ui.canvas.width, ui.canvas.height);
+    c.save(); c.scale(dpr, dpr); c.translate(-(camera.x - innerWidth / 2), -(camera.y - innerHeight / 2)); drawMap(c); grass.forEach(g => { const sw = Math.sin(t * 1.5 + g.p) * 4; c.strokeStyle = g.c; c.lineWidth = 3; c.beginPath(); c.moveTo(g.x, g.y + g.h * .45); c.quadraticCurveTo(g.x + sw, g.y, g.x, g.y - g.h); c.stroke(); }); portals.forEach(p => drawPortal(c, p, t)); drawPlayer(c, t); c.restore();
   }
-
-  function drawMap(ctx) {
-    rounded(ctx, 80, 80, state.world.w - 160, state.world.h - 160, 52, '#6f8b42', '#91a66d', 4);
-
-    ctx.strokeStyle = 'rgba(0,0,0,.18)';
-    ctx.lineWidth = 1;
-
-    for (let x = 110; x < state.world.w - 110; x += 50) {
-      ctx.beginPath();
-      ctx.moveTo(x, 110);
-      ctx.lineTo(x, state.world.h - 110);
-      ctx.stroke();
-    }
-
-    for (let y = 110; y < state.world.h - 110; y += 50) {
-      ctx.beginPath();
-      ctx.moveTo(110, y);
-      ctx.lineTo(state.world.w - 110, y);
-      ctx.stroke();
-    }
-
-    const glow = ctx.createRadialGradient(1500, 950, 20, 1500, 950, 170);
-    glow.addColorStop(0, 'rgba(205,255,120,.55)');
-    glow.addColorStop(1, 'rgba(205,255,120,0)');
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(1500, 950, 170, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  function drawGrass(ctx, time) {
-    state.grass.forEach((grass) => {
-      const sway = Math.sin(time * 1.5 + grass.phase) * 4;
-      ctx.strokeStyle = grass.color;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(grass.x, grass.y + grass.h * 0.45);
-      ctx.quadraticCurveTo(grass.x + sway, grass.y, grass.x, grass.y - grass.h);
-      ctx.stroke();
-    });
-  }
-
-  function drawPortal(ctx, portal, time) {
-    const done = topicSolved(portal.index) === TOPICS[portal.index].questions.length;
-    const color = done ? '#ffe680' : portal.color;
-
-    ctx.fillStyle = 'rgba(0,0,0,.30)';
-    ctx.beginPath();
-    ctx.ellipse(portal.x, portal.y + 18, 76, 24, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    const glow = ctx.createRadialGradient(portal.x, portal.y, 6, portal.x, portal.y, 92);
-    glow.addColorStop(0, hexToRgba(color, 0.65));
-    glow.addColorStop(1, hexToRgba(color, 0));
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(portal.x, portal.y, 86 + Math.sin(time * 2 + portal.index) * 5, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = '#dacb9b';
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.ellipse(portal.x, portal.y, 58, 18, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 4;
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath();
-      ctx.ellipse(portal.x, portal.y, 45 + i * 8 + Math.sin(time * 2.5 + i) * 2, 12 + i * 4, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    rounded(ctx, portal.x - 44, portal.y - 36, 12, 54, 6, '#7f8b72');
-    rounded(ctx, portal.x + 32, portal.y - 36, 12, 54, 6, '#7f8b72');
-
-    ctx.font = '700 15px system-ui';
-    const label = shorten(portal.title, 28);
-    const textWidth = ctx.measureText(label).width;
-    rounded(ctx, portal.x - textWidth / 2 - 14, portal.y - 78, textWidth + 28, 28, 14, 'rgba(8,12,10,.86)', 'rgba(255,255,255,.1)', 1);
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#f8ffd8';
-    ctx.fillText(label, portal.x, portal.y - 58);
-
-    if (done) {
-      ctx.font = '900 24px system-ui';
-      ctx.fillText('✓', portal.x, portal.y + 5);
-    }
-  }
-
-  function drawPlayer(ctx, time) {
-    const bob = Math.sin(state.player.step || time) * 2;
-    ctx.save();
-    ctx.translate(state.player.x, state.player.y + bob);
-
-    ctx.fillStyle = 'rgba(0,0,0,.34)';
-    ctx.beginPath();
-    ctx.ellipse(0, 36, 35, 14, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = '#442f1c';
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.moveTo(18, 0);
-    ctx.lineTo(45, 30);
-    ctx.stroke();
-
-    ctx.fillStyle = '#9cff8e';
-    ctx.beginPath();
-    ctx.arc(47, 31, 8, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#ff8f71';
-    ctx.beginPath();
-    ctx.moveTo(0, -5);
-    ctx.lineTo(31, 36);
-    ctx.lineTo(-31, 36);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = '#5f3aa0';
-    ctx.beginPath();
-    ctx.moveTo(-12, -58);
-    ctx.lineTo(4, -94);
-    ctx.lineTo(21, -54);
-    ctx.quadraticCurveTo(6, -62, -12, -58);
-    ctx.fill();
-
-    ctx.fillStyle = '#eadcc5';
-    ctx.beginPath();
-    ctx.arc(0, -28, 34, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#2d241e';
-    ctx.font = '900 24px system-ui';
-    ctx.textAlign = 'center';
-    ctx.fillText('G', 0, -20);
-
-    ctx.restore();
-  }
-
-  function openPortal(topicIndex) {
-    const topic = TOPICS[topicIndex];
-    const solved = topicSolved(topicIndex);
-    const wrong = topicWrong(topicIndex);
-
-    showModal(`
-      <h2>${escapeHtml(topic.title)}</h2>
-      <p class="muted">Correct questions disappear. Wrong questions return to the random pool.</p>
-      <div class="chips">
-        <span class="chip">${solved}/${topic.questions.length} solved</span>
-        <span class="chip">${wrong} wrong</span>
-        <span class="chip">${topic.questions.length} total</span>
-      </div>
-      <div class="qbox">Choose a random mission from this topic.</div>
-      <button class="btn primary" data-action="random">Start Random Question</button>
-      <button class="btn secondary" data-action="wrong">Practice Wrong Questions</button>
-      <button class="btn secondary" data-action="close">Close</button>
-    `);
-
-    ui.modalContent.querySelector('[data-action="random"]').onclick = () => startQuestion(topicIndex, false);
-    ui.modalContent.querySelector('[data-action="wrong"]').onclick = () => startQuestion(topicIndex, true);
-    ui.modalContent.querySelector('[data-action="close"]').onclick = closeModal;
-  }
-
-  function chooseQuestion(topicIndex, wrongOnly) {
-    let pool = TOPICS[topicIndex].questions
-      .map((question, questionIndex) => ({
-        questionIndex,
-        question,
-        id: qid(topicIndex, questionIndex)
-      }))
-      .filter((item) => !state.progress.done[item.id]);
-
-    if (wrongOnly) {
-      pool = pool.filter((item) => state.progress.wrong[item.id]);
-    }
-
-    if (!pool.length) return null;
-
-    const fresh = pool.filter((item) => !state.progress.wrong[item.id]);
-    const missed = pool.filter((item) => state.progress.wrong[item.id]);
-
-    if (!wrongOnly && fresh.length && missed.length) {
-      return Math.random() < 0.7 ? pick(fresh) : pick(missed);
-    }
-
-    return pick(pool);
-  }
-
-  function startQuestion(topicIndex, wrongOnly) {
-    const selected = chooseQuestion(topicIndex, wrongOnly);
-    const topic = TOPICS[topicIndex];
-
-    if (!selected) {
-      showModal(`
-        <h2>${escapeHtml(topic.title)}</h2>
-        <p class="muted">${wrongOnly ? 'No wrong questions in this topic right now.' : 'This topic is fully cleared.'}</p>
-        <button class="btn primary" data-action="back">Back to Portal</button>
-        <button class="btn secondary" data-action="close">Close</button>
-      `);
-
-      ui.modalContent.querySelector('[data-action="back"]').onclick = () => openPortal(topicIndex);
-      ui.modalContent.querySelector('[data-action="close"]').onclick = closeModal;
-      return;
-    }
-
-    showQuestion(topicIndex, selected, wrongOnly);
-  }
-
-  function showQuestion(topicIndex, selected, wrongOnly) {
-    const topic = TOPICS[topicIndex];
-    const savedAnswer = state.progress.answers[selected.id] || '';
-
-    showModal(`
-      <h2>${escapeHtml(topic.title)}</h2>
-      <div class="chips">
-        <span class="chip">${wrongOnly ? 'Wrong practice' : 'Random mission'}</span>
-        <span class="chip">Question ${selected.questionIndex + 1}/${topic.questions.length}</span>
-      </div>
-      <div class="qbox"><b>Question</b><br><br>${escapeHtml(selected.question.question)}</div>
-      <label for="answerInput">Your answer</label>
-      <textarea id="answerInput" placeholder="Type your answer here...">${escapeHtml(savedAnswer)}</textarea>
-      <button class="btn primary" data-action="submit">Submit Answer</button>
-      <button class="btn secondary" data-action="back">Back to Portal</button>
-    `);
-
-    ui.modalContent.querySelector('[data-action="submit"]').onclick = () => reviewAnswer(topicIndex, selected, wrongOnly);
-    ui.modalContent.querySelector('[data-action="back"]').onclick = () => openPortal(topicIndex);
-    document.getElementById('answerInput').focus();
-  }
-
-  function reviewAnswer(topicIndex, selected, wrongOnly) {
-    const answer = document.getElementById('answerInput').value.trim();
-    const correctAnswer = selected.question.answer || 'No official answer has been added for this question yet.';
-
-    state.progress.answers[selected.id] = answer;
-    saveProgress();
-
-    showModal(`
-      <h2>Review Your Answer</h2>
-      <div class="answer"><b>Question:</b>\n${escapeHtml(selected.question.question)}</div>
-      <div class="answer"><b>Your answer:</b>\n${escapeHtml(answer || '(empty)')}</div>
-      <div class="answer"><b>Correct answer:</b>\n${escapeHtml(correctAnswer)}</div>
-      <button class="btn primary" data-action="yes">Yes, it was correct</button>
-      <button class="btn danger" data-action="no">No, it was not</button>
-      <button class="btn secondary" data-action="edit">Back and Edit</button>
-    `);
-
-    ui.modalContent.querySelector('[data-action="yes"]').onclick = () => finishQuestion(topicIndex, selected, wrongOnly, true);
-    ui.modalContent.querySelector('[data-action="no"]').onclick = () => finishQuestion(topicIndex, selected, wrongOnly, false);
-    ui.modalContent.querySelector('[data-action="edit"]').onclick = () => showQuestion(topicIndex, selected, wrongOnly);
-  }
-
-  function finishQuestion(topicIndex, selected, wrongOnly, correct) {
-    const id = selected.id;
-    state.progress.attempts[id] = (state.progress.attempts[id] || 0) + 1;
-
-    if (correct) {
-      state.progress.done[id] = true;
-      delete state.progress.wrong[id];
-      state.progress.score += wrongOnly ? 8 : 10;
-      state.progress.streak += 1;
-      state.progress.bestStreak = Math.max(state.progress.bestStreak || 0, state.progress.streak);
-    } else {
-      state.progress.wrong[id] = true;
-      state.progress.streak = 0;
-    }
-
-    saveProgress();
-    updateHud();
-    renderTopicList();
-
-    const remaining = TOPICS[topicIndex].questions.length - topicSolved(topicIndex);
-
-    showModal(`
-      <h2>${correct ? 'Saved as Correct' : 'Returned to Pool'}</h2>
-      <p class="muted">${correct ? 'This question will not appear again.' : 'This question can appear again later.'}</p>
-      <div class="chips">
-        <span class="chip">Remaining in topic: ${remaining}</span>
-        <span class="chip">Score: ${state.progress.score}</span>
-        <span class="chip">Streak: ${state.progress.streak}</span>
-      </div>
-      <button class="btn primary" data-action="next">Next Question</button>
-      <button class="btn secondary" data-action="portal">Back to Portal</button>
-      <button class="btn secondary" data-action="close">Close</button>
-    `);
-
-    ui.modalContent.querySelector('[data-action="next"]').onclick = () => startQuestion(topicIndex, wrongOnly);
-    ui.modalContent.querySelector('[data-action="portal"]').onclick = () => openPortal(topicIndex);
-    ui.modalContent.querySelector('[data-action="close"]').onclick = closeModal;
-  }
-
-  function openStats() {
-    const wrongCount = Object.keys(state.progress.wrong).filter((id) => !state.progress.done[id]).length;
-
-    showModal(`
-      <h2>Progress</h2>
-      <div class="chips">
-        <span class="chip">Score: ${state.progress.score}</span>
-        <span class="chip">Solved: ${solvedCount()}/${totalQuestions()}</span>
-        <span class="chip">Wrong queue: ${wrongCount}</span>
-        <span class="chip">Best streak: ${state.progress.bestStreak || 0}</span>
-      </div>
-      <button class="btn danger" data-action="reset">Reset Progress</button>
-      <button class="btn secondary" data-action="logout">Logout</button>
-      <button class="btn primary" data-action="close">Close</button>
-    `);
-
-    ui.modalContent.querySelector('[data-action="reset"]').onclick = resetProgress;
-    ui.modalContent.querySelector('[data-action="logout"]').onclick = logout;
-    ui.modalContent.querySelector('[data-action="close"]').onclick = closeModal;
-  }
-
-  function openHelp() {
-    showModal(`
-      <h2>How to Play</h2>
-      <div class="qbox">
-        <p>Login with <b>Gabby</b> / <b>1234</b>.</p>
-        <p>Move with <b>WASD</b> or arrow keys. Stand near a portal and press <b>E</b>.</p>
-        <p>Each portal is one topic. Correct questions disappear. Wrong questions return to the random pool.</p>
-      </div>
-      <button class="btn primary" data-action="close">Got it</button>
-    `);
-
-    ui.modalContent.querySelector('[data-action="close"]').onclick = closeModal;
-  }
-
-  function resetProgress() {
-    if (!confirm('Reset all DiplomaEZ progress?')) return;
-
-    localStorage.removeItem(STORAGE_KEY);
-    state.progress = loadProgress();
-    updateHud();
-    renderTopicList();
-    closeModal();
-    toast('Progress reset.');
-  }
-
-  function logout() {
-    state.loggedIn = false;
-    state.modalOpen = false;
-    ui.modal.classList.add('hidden');
-    ui.hud.classList.add('hidden');
-    ui.sidePanel.classList.add('hidden');
-    ui.portalPrompt.classList.add('hidden');
-    ui.loginPass.value = '';
-    ui.loginScreen.classList.remove('hidden');
-    setTimeout(() => ui.loginId.focus(), 100);
-  }
-
-  function showModal(html) {
-    state.modalOpen = true;
-    ui.modalContent.innerHTML = html;
-    ui.modal.classList.remove('hidden');
-  }
-
-  function closeModal() {
-    state.modalOpen = false;
-    ui.modal.classList.add('hidden');
-    ui.modalContent.innerHTML = '';
-  }
-
-  let toastTimer = 0;
-  function toast(text) {
-    ui.toast.textContent = text;
-    ui.toast.classList.remove('hidden');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => ui.toast.classList.add('hidden'), 2200);
-  }
-
-  function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>"']/g, (char) => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;'
-    })[char]);
-  }
-
-  function clamp(number, min, max) {
-    return Math.max(min, Math.min(max, number));
-  }
-
-  function pick(array) {
-    return array[Math.floor(Math.random() * array.length)];
-  }
-
-  function shorten(text, limit) {
-    return text.length > limit ? text.slice(0, limit - 1) + '…' : text;
-  }
-
-  function hexToRgba(hex, alpha) {
-    const clean = hex.replace('#', '');
-    const value = parseInt(clean, 16);
-    return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
-  }
-
-  function rounded(ctx, x, y, width, height, radius, fill, stroke, lineWidth) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.arcTo(x + width, y, x + width, y + height, radius);
-    ctx.arcTo(x + width, y + height, x, y + height, radius);
-    ctx.arcTo(x, y + height, x, y, radius);
-    ctx.arcTo(x, y, x + width, y, radius);
-    ctx.closePath();
-
-    if (fill) {
-      ctx.fillStyle = fill;
-      ctx.fill();
-    }
-
-    if (stroke) {
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = lineWidth || 1;
-      ctx.stroke();
-    }
-
-    ctx.restore();
-  }
+  function drawMap(c) { round(c, 80, 80, world.w - 160, world.h - 160, 52, '#6f8b42', '#91a66d', 4); c.strokeStyle = 'rgba(0,0,0,.18)'; for (let x = 110; x < world.w - 110; x += 50) { c.beginPath(); c.moveTo(x, 110); c.lineTo(x, world.h - 110); c.stroke(); } for (let y = 110; y < world.h - 110; y += 50) { c.beginPath(); c.moveTo(110, y); c.lineTo(world.w - 110, y); c.stroke(); } }
+  function drawPortal(c, p, t) { const done = topics[p.index] && topics[p.index].questions.length && topicSolved(p.index) === topics[p.index].questions.length, col = done ? '#ffe680' : p.color; c.fillStyle = 'rgba(0,0,0,.30)'; c.beginPath(); c.ellipse(p.x, p.y + 18, 76, 24, 0, 0, 7); c.fill(); const g = c.createRadialGradient(p.x, p.y, 6, p.x, p.y, 92); g.addColorStop(0, rgba(col, .65)); g.addColorStop(1, rgba(col, 0)); c.fillStyle = g; c.beginPath(); c.arc(p.x, p.y, 86 + Math.sin(t * 2 + p.index) * 5, 0, 7); c.fill(); c.strokeStyle = '#dacb9b'; c.lineWidth = 6; c.beginPath(); c.ellipse(p.x, p.y, 58, 18, 0, 0, 7); c.stroke(); c.strokeStyle = col; c.lineWidth = 4; for (let i = 0; i < 3; i++) { c.beginPath(); c.ellipse(p.x, p.y, 45 + i * 8 + Math.sin(t * 2.5 + i) * 2, 12 + i * 4, 0, 0, 7); c.stroke(); } round(c, p.x - 44, p.y - 36, 12, 54, 6, '#7f8b72'); round(c, p.x + 32, p.y - 36, 12, 54, 6, '#7f8b72'); c.font = '700 15px system-ui'; const label = short(p.title, 28), w = c.measureText(label).width; round(c, p.x - w / 2 - 14, p.y - 78, w + 28, 28, 14, 'rgba(8,12,10,.86)', 'rgba(255,255,255,.1)', 1); c.textAlign = 'center'; c.fillStyle = '#f8ffd8'; c.fillText(label, p.x, p.y - 58); if (done) { c.font = '900 24px system-ui'; c.fillText('✓', p.x, p.y + 5); } }
+  function drawPlayer(c, t) { c.save(); c.translate(player.x, player.y + Math.sin(player.step || t) * 2); c.fillStyle = 'rgba(0,0,0,.34)'; c.beginPath(); c.ellipse(0, 36, 35, 14, 0, 0, 7); c.fill(); c.strokeStyle = '#442f1c'; c.lineWidth = 5; c.beginPath(); c.moveTo(18, 0); c.lineTo(45, 30); c.stroke(); c.fillStyle = '#9cff8e'; c.beginPath(); c.arc(47, 31, 8, 0, 7); c.fill(); c.fillStyle = '#ff8f71'; c.beginPath(); c.moveTo(0, -5); c.lineTo(31, 36); c.lineTo(-31, 36); c.closePath(); c.fill(); c.fillStyle = '#5f3aa0'; c.beginPath(); c.moveTo(-12, -58); c.lineTo(4, -94); c.lineTo(21, -54); c.quadraticCurveTo(6, -62, -12, -58); c.fill(); c.fillStyle = '#eadcc5'; c.beginPath(); c.arc(0, -28, 34, 0, 7); c.fill(); c.fillStyle = '#2d241e'; c.font = '900 24px system-ui'; c.textAlign = 'center'; c.fillText('G', 0, -20); c.restore(); }
+
+  function openPortal(ti) { const t = topics[ti]; showModal(`<h2>${esc(t.title)}</h2><p class="muted">Correct questions disappear, or can be scheduled to appear again after 7 days.</p><div class="chips"><span class="chip">${topicSolved(ti)}/${t.questions.length} solved</span><span class="chip">${topicWrong(ti)} wrong</span><span class="chip">${topicAvailable(ti)} available now</span></div><div class="qbox">Choose a random mission from this topic.</div><button class="btn primary" data-a="random">Start Random Question</button><button class="btn secondary" data-a="wrong">Practice Wrong Questions</button><button class="btn secondary" data-a="manage">Open in Portals Panel</button><button class="btn secondary" data-a="close">Close</button>`); ui.modalContent.querySelector('[data-a="random"]').onclick = () => startQuestion(ti, false); ui.modalContent.querySelector('[data-a="wrong"]').onclick = () => startQuestion(ti, true); ui.modalContent.querySelector('[data-a="manage"]').onclick = () => { closeModal(); activePanel = 'portals'; renderPanel(); if (panelCollapsed) ui.panel.querySelector('#collapsePanelBtn').click(); }; ui.modalContent.querySelector('[data-a="close"]').onclick = closeModal; }
+  function chooseQuestion(ti, wrongOnly) { const now = Date.now(); let pool = topics[ti].questions.map((q, qi) => ({ q, qi, id: qid(ti, qi) })).filter(o => !progress.done[o.id] && (!progress.reviewAt[o.id] || progress.reviewAt[o.id] <= now)); if (wrongOnly) pool = pool.filter(o => progress.wrong[o.id]); if (!pool.length) return null; const fresh = pool.filter(o => !progress.wrong[o.id] && !progress.reviewAt[o.id]), missed = pool.filter(o => progress.wrong[o.id] || progress.reviewAt[o.id]); return !wrongOnly && fresh.length && missed.length ? (Math.random() < .7 ? pick(fresh) : pick(missed)) : pick(pool); }
+  function startQuestion(ti, wrongOnly) { const sel = chooseQuestion(ti, wrongOnly), t = topics[ti]; if (!sel) { showModal(`<h2>${esc(t.title)}</h2><p class="muted">${wrongOnly ? 'No wrong questions in this topic right now.' : 'No available questions right now. Some questions may be scheduled for 7-day review.'}</p><button class="btn primary" data-a="back">Back to Portal</button><button class="btn secondary" data-a="close">Close</button>`); ui.modalContent.querySelector('[data-a="back"]').onclick = () => openPortal(ti); ui.modalContent.querySelector('[data-a="close"]').onclick = closeModal; return; } showQuestion(ti, sel, wrongOnly); }
+  function showQuestion(ti, sel, wrongOnly) { const t = topics[ti], saved = progress.answers[sel.id] || ''; showModal(`<h2>${esc(t.title)}</h2><div class="chips"><span class="chip">${wrongOnly ? 'Wrong practice' : 'Random mission'}</span><span class="chip">Question ${sel.qi + 1}/${t.questions.length}</span><span class="chip">${status(sel.id)}</span></div><div class="qbox"><b>Question</b><br><br>${esc(sel.q.question)}</div><label>Your answer</label><textarea id="answerInput">${esc(saved)}</textarea><button class="btn primary" data-a="submit">Submit Answer</button><button class="btn secondary" data-a="editq">Edit this question</button><button class="btn secondary" data-a="back">Back to Portal</button>`); ui.modalContent.querySelector('[data-a="submit"]').onclick = () => reviewAnswer(ti, sel, wrongOnly); ui.modalContent.querySelector('[data-a="editq"]').onclick = () => editQuestion(ti, sel.qi); ui.modalContent.querySelector('[data-a="back"]').onclick = () => openPortal(ti); document.getElementById('answerInput').focus(); }
+  function reviewAnswer(ti, sel, wrongOnly) { const ans = document.getElementById('answerInput').value.trim(), correct = sel.q.answer || 'No official answer has been added for this question yet.'; progress.answers[sel.id] = ans; saveProgress(); showModal(`<h2>Review Your Answer</h2><div class="answer"><b>Question:</b>\n${esc(sel.q.question)}</div><div class="answer"><b>Your answer:</b>\n${esc(ans || '(empty)')}</div><div class="answer"><b>Correct answer:</b>\n${esc(correct)}</div><button class="btn primary" data-a="yes">Yes, it was correct</button><button class="btn secondary" data-a="review7">Correct, show again after 7 days</button><button class="btn danger" data-a="no">No, it was not</button><button class="btn secondary" data-a="edit">Back and Edit</button>`); ui.modalContent.querySelector('[data-a="yes"]').onclick = () => finishQuestion(ti, sel, wrongOnly, 'done'); ui.modalContent.querySelector('[data-a="review7"]').onclick = () => finishQuestion(ti, sel, wrongOnly, 'review7'); ui.modalContent.querySelector('[data-a="no"]').onclick = () => finishQuestion(ti, sel, wrongOnly, 'wrong'); ui.modalContent.querySelector('[data-a="edit"]').onclick = () => showQuestion(ti, sel, wrongOnly); }
+  function finishQuestion(ti, sel, wrongOnly, res) { const id = sel.id; progress.attempts[id] = (progress.attempts[id] || 0) + 1; progress.total = (progress.total || 0) + 1; if (res === 'done' || res === 'review7') { delete progress.wrong[id]; if (res === 'done') { progress.done[id] = true; delete progress.reviewAt[id]; } else { delete progress.done[id]; progress.reviewAt[id] = Date.now() + REVIEW_MS; } progress.score += wrongOnly ? 8 : 10; progress.streak++; progress.correct = (progress.correct || 0) + 1; progress.best = Math.max(progress.best || 0, progress.streak); } else { delete progress.done[id]; delete progress.reviewAt[id]; progress.wrong[id] = true; progress.streak = 0; } saveProgress(); updateHud(); renderPanel(); const msg = res === 'done' ? 'This question will not appear again.' : res === 'review7' ? 'This question will appear again after 7 days.' : 'This question can appear again later.'; showModal(`<h2>${res === 'wrong' ? 'Returned to Pool' : 'Saved as Correct'}</h2><p class="muted">${msg}</p><div class="chips"><span class="chip">Remaining in topic: ${topics[ti].questions.length - topicSolved(ti)}</span><span class="chip">Score: ${progress.score}</span><span class="chip">Streak: ${progress.streak}</span></div><button class="btn primary" data-a="next">Next Question</button><button class="btn secondary" data-a="portal">Back to Portal</button><button class="btn secondary" data-a="close">Close</button>`); ui.modalContent.querySelector('[data-a="next"]').onclick = () => startQuestion(ti, wrongOnly); ui.modalContent.querySelector('[data-a="portal"]').onclick = () => openPortal(ti); ui.modalContent.querySelector('[data-a="close"]').onclick = closeModal; }
+
+  function openStats() { const s = stats(); showModal(`<h2>Player Statistics</h2><div class="stat-grid modal-stats"><div class="stat-card"><span>Score</span><strong>${progress.score}</strong></div><div class="stat-card"><span>Solved</span><strong>${s.solved}/${s.total}</strong></div><div class="stat-card"><span>Wrong queue</span><strong>${s.wrong}</strong></div><div class="stat-card"><span>7-day review</span><strong>${s.scheduled}</strong></div><div class="stat-card"><span>Due now</span><strong>${s.due}</strong></div><div class="stat-card"><span>Attempted</span><strong>${s.attempts}</strong></div><div class="stat-card"><span>Accuracy</span><strong>${s.accuracy}%</strong></div><div class="stat-card"><span>Best streak</span><strong>${progress.best || 0}</strong></div></div><button class="btn danger" data-a="reset">Reset Progress</button><button class="btn secondary" data-a="logout">Logout</button><button class="btn primary" data-a="close">Close</button>`); ui.modalContent.querySelector('[data-a="reset"]').onclick = resetProgress; ui.modalContent.querySelector('[data-a="logout"]').onclick = logout; ui.modalContent.querySelector('[data-a="close"]').onclick = closeModal; }
+  function openHelp() { showModal(`<h2>How to Play</h2><div class="qbox"><p>Login with <b>Gabby</b> / <b>1234</b>.</p><p>Move with <b>WASD</b> or arrows. Stand near a portal and press <b>E</b> or <b>Enter</b>.</p><p>Use the left panel to see stats, edit portals/questions, add portals, and add questions.</p><p>When an answer is correct, choose whether it disappears forever or appears again after 7 days.</p></div><button class="btn primary" data-a="close">Got it</button>`); ui.modalContent.querySelector('[data-a="close"]').onclick = closeModal; }
+  function resetProgress() { if (!confirm('Reset all DiplomaEZ progress?')) return; localStorage.removeItem(PROGRESS_KEY); progress = loadProgress(); updateHud(); renderPanel(); closeModal(); toast('Progress reset.'); }
+  function logout() { logged = false; modalOpen = false; ui.modal.classList.add('hidden'); ui.hud.classList.add('hidden'); ui.panel.classList.add('hidden'); ui.prompt.classList.add('hidden'); ui.loginPass.value = ''; ui.login.classList.remove('hidden'); setTimeout(() => ui.loginId.focus(), 100); }
+  function showModal(html) { modalOpen = true; ui.modalContent.innerHTML = html; ui.modal.classList.remove('hidden'); }
+  function closeModal() { modalOpen = false; ui.modal.classList.add('hidden'); ui.modalContent.innerHTML = ''; }
+  let toastTimer = 0; function toast(txt) { ui.toast.textContent = txt; ui.toast.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer = setTimeout(() => ui.toast.classList.add('hidden'), 2200); }
+  function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  function short(t, n) { t = String(t || ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+  function inTime(ms) { const d = Math.ceil(ms / 86400000); if (d > 1) return 'in ' + d + 'd'; if (d === 1) return 'tomorrow'; return 'in ' + Math.max(1, Math.ceil(ms / 3600000)) + 'h'; }
+  function rgba(hex, a) { const v = parseInt(String(hex).replace('#', ''), 16); return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`; }
+  function round(c, x, y, w, h, r, f, s, lw) { c.save(); c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); if (f) { c.fillStyle = f; c.fill(); } if (s) { c.strokeStyle = s; c.lineWidth = lw || 1; c.stroke(); } c.restore(); }
 })();
