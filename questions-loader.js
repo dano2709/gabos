@@ -26,7 +26,7 @@
     window.DIPLOMAEZ_TOPICS = JSON.parse(text);
 
     const script = document.createElement('script');
-    script.src = 'app.js?v=20260620-questions';
+    script.src = 'app.js?v=20260620-panel';
     script.onload = function () {
       console.log('DiplomaEZ loaded with', window.DIPLOMAEZ_TOPICS.length, 'topics.');
       if (document.readyState !== 'loading') {
