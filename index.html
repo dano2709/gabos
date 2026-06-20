@@ -1,1 +1,720 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DiplomaEZ</title><style>html,body{margin:0;height:100%;overflow:hidden;background:#16250f;color:#f4ffe8;font-family:system-ui}canvas{display:block;width:100vw;height:100vh}.box{background:#101810e6;border:1px solid #ffffff22;border-radius:18px;padding:16px;box-shadow:0 12px 35px #0008}.screen{position:fixed;inset:0;display:grid;place-items:center;background:radial-gradient(circle,#365f20,#050805);z-index:50}.login-card{width:min(92vw,430px);max-height:92vh;overflow:auto}input,textarea{width:100%;box-sizing:border-box;border-radius:12px;border:1px solid #ffffff33;background:#ffffff12;color:white;padding:12px;margin:6px 0 10px}textarea{min-height:120px}.btn{border:0;border-radius:12px;padding:11px 14px;margin:6px 6px 0 0;font-weight:800;cursor:pointer}.ok{background:#bfff78;color:#102008}.ghost{background:#ffffff18;color:white;border:1px solid #ffffff22}.bad{background:#ff777733;color:#ffdada;border:1px solid #ff777755}#hud{position:fixed;top:12px;left:12px;right:12px;display:none;justify-content:space-between;pointer-events:none;z-index:3}#prompt{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);display:none;z-index:3}#modal{position:fixed;inset:0;background:#0009;display:none;place-items:center;z-index:40}#panel{width:min(92vw,760px);max-height:86vh;overflow:auto}.answer{white-space:pre-wrap;background:#ffffff10;border-radius:12px;padding:12px;margin:10px 0}.small{color:#cde0c8}</style></head><body><canvas id="c"></canvas><div id="login" class="screen"><div class="box login-card"><h1>DiplomaEZ</h1><p class="small">Login to continue.</p><label>ID</label><input id="uid" autocomplete="username" autofocus><label>Password</label><input id="pw" type="password" autocomplete="current-password"><button class="btn ok" onclick="loginNow()">Enter Arena</button><p class="small">ID: <b>Gabby</b> &nbsp; PASS: <b>1234</b></p><p id="msg" style="color:#ffbbbb"></p></div></div><div id="hud" class="box"><b>DiplomaEZ</b><span>WASD move • E enter • T stats • H help</span><span id="stat"></span></div><div id="prompt" class="box">Press E</div><div id="modal"><div id="panel" class="box"></div></div><script>const ID='Gabby',PW='1234',KEY='diplomaez_progress_v8';const DATA=[['Data Structures',[['Stack vs queue?','Stack is LIFO. Queue is FIFO.'],['Array vs linked list?','Array has fast indexed access. Linked list has flexible insert/delete.'],['Hash table use?','Fast key value lookup using a hash function.']]],['GoF Patterns',[['Singleton intent?','Only one instance plus a global access point.'],['Factory Method?','Lets subclasses decide which object type to create.'],['Observer?','Updates dependent objects when a subject changes.']]],['Compilers',[['Lexical analysis?','Turns characters into tokens.'],['Syntax vs semantic analysis?','Syntax checks grammar. Semantic checks meaning.'],['Code generation?','Creates target code from an intermediate form.']]],['Machine Learning',[['Supervised learning?','Learning from labeled examples.'],['Clustering?','Grouping similar data without labels.'],['Overfitting?','Model memorizes training data and generalizes poorly.']]],['GPUs and CUDA',[['Why GPUs?','They run many similar operations in parallel.'],['What is CUDA?','NVIDIA platform for general GPU programming.'],['CUDA kernel?','Function executed by many GPU threads.']]],['Algorithms',[['Brute force?','Trying all possible solutions.'],['Divide and conquer?','Split, solve smaller parts, combine results.'],['Dynamic programming?','Store results of overlapping subproblems.']]],['Security',[['Why validate input?','To prevent invalid or unsafe data from entering the system.'],['Why hash passwords?','So original passwords are not stored directly.'],['What is least privilege?','Give users and code only the access they need.']]],['RAM and Turing',[['RAM model purpose?','Platform independent algorithm analysis.'],['Turing machine?','Theoretical computation model with tape and states.'],['Why models matter?','They help reason about computability and efficiency.']]],['RISC',[['RISC meaning?','Reduced Instruction Set Computer.'],['Why good for pipelining?','Instructions are simple and uniform.'],['Pipeline?','Overlapping instruction stages for throughput.']]],['Data Models',[['Relational model?','Data stored in tables with rows and columns.'],['Primary key?','Unique identifier of a row.'],['Foreign key?','Reference to a primary key in another table.']]],['Automata',[['Alphabet?','Finite set of symbols.'],['Finite automaton?','State machine recognizing regular languages.'],['Grammar?','Rules for generating strings.']]],['Paradigms',[['Imperative programming?','Describes step by step how to compute.'],['Declarative programming?','Describes what result is wanted.'],['OOP?','Programs organized around objects with state and behavior.']]],['Data Types',[['Static typing?','Types checked before runtime.'],['Dynamic typing?','Types checked during runtime.'],['Heap allocation?','Memory reserved dynamically while program runs.']]],['Techniques',[['Recursion parts?','Base case and recursive step.'],['Parameter?','Input variable of a function.'],['Control flow?','Order of executed statements.']]],['Application Development',[['JVM platform independence?','Java bytecode runs on JVMs for different systems.'],['Bytecode?','Intermediate code for a virtual machine.'],['Exception?','Special mechanism for abnormal situations.']]],['Architectures',[['Von Neumann architecture?','Instructions and data share memory.'],['Bottleneck?','CPU waits for shared memory access.'],['Cache?','Small fast memory near the CPU.']]],['Numbers',[['Why binary?','Hardware naturally uses two states.'],['Two complement?','Common representation of signed integers.'],['UTF-8 importance?','Unicode support with ASCII compatibility.']]],['Final State',[['Better monitoring?','Use logs, traces, alerts, dashboards and health checks.'],['Async integration benefit?','Systems are decoupled and more resilient.'],['Message queue?','Stores messages between producer and consumer.']]]];let prog=JSON.parse(localStorage[KEY]||'{"score":0,"streak":0,"best":0,"done":{},"wrong":{},"ans":{}}'),cv=c,ctx=cv.getContext('2d'),D=1,keys={},p={x:1250,y:760,v:260,t:0},cam={x:1250,y:760},near=null,open=false,started=false,world={w:2600,h:1600},colors=['#8eff87','#ffa7eb','#82efff','#ffe27f','#c59cff','#ffb089'];const portals=DATA.map((g,i)=>({i,x:260+(i%5)*510,y:250+Math.floor(i/5)*350,c:colors[i%colors.length]}));function loginNow(){if(uid.value.trim().toLowerCase()==ID.toLowerCase()&&pw.value.trim()==PW){login.style.display='none';hud.style.display='flex';save();if(!started){started=true;loop(0)}}else msg.textContent='Wrong ID or password.'}uid.onkeydown=e=>{if(e.key==='Enter')pw.focus()};pw.onkeydown=e=>{if(e.key==='Enter')loginNow()};function save(){localStorage[KEY]=JSON.stringify(prog);stat.textContent=`Score ${prog.score} • Solved ${Object.keys(prog.done).length}/${DATA.length*3} • Streak ${prog.streak}`}function resize(){D=Math.min(devicePixelRatio||1,1.5);cv.width=innerWidth*D;cv.height=innerHeight*D;cv.style.width=innerWidth+'px';cv.style.height=innerHeight+'px'}addEventListener('resize',resize);resize();addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=1;if(e.key==='Escape')closeM();if(login.style.display!=='none'||open)return;if(e.key.toLowerCase()==='e'&&near)portal(near.i);if(e.key.toLowerCase()==='t')stats();if(e.key.toLowerCase()==='h')help()});addEventListener('keyup',e=>keys[e.key.toLowerCase()]=0);modal.onclick=e=>{if(e.target==modal)closeM()};function upd(dt){if(login.style.display!=='none'||open)return;let dx=0,dy=0;if(keys.w||keys.arrowup)dy--;if(keys.s||keys.arrowdown)dy++;if(keys.a||keys.arrowleft)dx--;if(keys.d||keys.arrowright)dx++;let l=Math.hypot(dx,dy)||1;if(dx||dy){p.x=Math.max(100,Math.min(world.w-100,p.x+dx/l*p.v*dt));p.y=Math.max(100,Math.min(world.h-100,p.y+dy/l*p.v*dt));p.t+=dt*9}cam.x+=(p.x-cam.x)*.08;cam.y+=(p.y-cam.y)*.08;let bd=9999;near=null;for(const po of portals){let d=Math.hypot(po.x-p.x,po.y-p.y);if(d<bd){bd=d;near=po}}prompt.style.display=bd<120?'block':'none';if(near)prompt.textContent='Press E to enter '+DATA[near.i][0]}let last=0;function loop(ts){let dt=Math.min(.033,(ts-last)/1000||.016);last=ts;upd(dt);draw(ts/1000);requestAnimationFrame(loop)}function draw(t){ctx.clearRect(0,0,cv.width,cv.height);let g=ctx.createLinearGradient(0,0,0,cv.height);g.addColorStop(0,'#8ac914');g.addColorStop(1,'#203816');ctx.fillStyle=g;ctx.fillRect(0,0,cv.width,cv.height);ctx.save();ctx.scale(D,D);ctx.translate(-(cam.x-innerWidth/2),-(cam.y-innerHeight/2));ctx.fillStyle='#6f8b42';round(70,70,world.w-140,world.h-140,50);ctx.strokeStyle='#0003';for(let x=100;x<world.w-100;x+=50){ctx.beginPath();ctx.moveTo(x,100);ctx.lineTo(x,world.h-100);ctx.stroke()}for(let y=100;y<world.h-100;y+=50){ctx.beginPath();ctx.moveTo(100,y);ctx.lineTo(world.w-100,y);ctx.stroke()}for(let i=0;i<150;i++){let xx=(i*97)%2400+100,yy=(i*173)%1400+100;ctx.strokeStyle=i%3?'#7cec74':'#e47e88';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(xx,yy+15);ctx.quadraticCurveTo(xx+Math.sin(t+i)*5,yy,xx,yy-18);ctx.stroke()}portals.forEach(po=>{let done=DATA[po.i][1].every((_,qi)=>prog.done[po.i+'_'+qi]),col=done?'#ffe680':po.c;ctx.strokeStyle=col;ctx.lineWidth=5;ctx.beginPath();ctx.ellipse(po.x,po.y,55,18,0,0,7);ctx.stroke();ctx.fillStyle=col;ctx.globalAlpha=.2;ctx.beginPath();ctx.arc(po.x,po.y,80+Math.sin(t*2)*4,0,7);ctx.fill();ctx.globalAlpha=1;ctx.font='700 15px system-ui';let name=DATA[po.i][0],tw=ctx.measureText(name).width;ctx.fillStyle='#111c';rr(po.x-tw/2-12,po.y-72,tw+24,26,13);ctx.fillStyle='#f8ffd8';ctx.textAlign='center';ctx.fillText(name,po.x,po.y-54);if(done)ctx.fillText('✓',po.x,po.y+5)});player(t);ctx.restore();save()}function player(t){ctx.save();ctx.translate(p.x,p.y+Math.sin(p.t||t)*2);ctx.fillStyle='#0005';ctx.beginPath();ctx.ellipse(0,35,34,13,0,0,7);ctx.fill();ctx.fillStyle='#ff8f71';ctx.beginPath();ctx.moveTo(0,-5);ctx.lineTo(30,35);ctx.lineTo(-30,35);ctx.closePath();ctx.fill();ctx.fillStyle='#5f3aa0';ctx.beginPath();ctx.moveTo(-10,-55);ctx.lineTo(3,-88);ctx.lineTo(18,-52);ctx.fill();ctx.fillStyle='#eadcc5';ctx.beginPath();ctx.arc(0,-28,33,0,7);ctx.fill();ctx.fillStyle='#2d241e';ctx.font='700 24px system-ui';ctx.textAlign='center';ctx.fillText('G',0,-20);ctx.restore()}function round(a,b,c,d,r){ctx.beginPath();ctx.moveTo(a+r,b);ctx.arcTo(a+c,b,a+c,b+d,r);ctx.arcTo(a+c,b+d,a,b+d,r);ctx.arcTo(a,b+d,a,b,r);ctx.arcTo(a,b,a+c,b,r);ctx.fill()}function rr(a,b,c,d,r){round(a,b,c,d,r)}function qid(i,qi){return i+'_'+qi}function choose(i,wrong){let arr=DATA[i][1].map((q,qi)=>({q,qi,id:qid(i,qi)})).filter(o=>!prog.done[o.id]);if(wrong)arr=arr.filter(o=>prog.wrong[o.id]);return arr.length?arr[Math.floor(Math.random()*arr.length)]:null}function portal(i){let d=DATA[i][1].filter((_,qi)=>prog.done[qid(i,qi)]).length,w=DATA[i][1].filter((_,qi)=>prog.wrong[qid(i,qi)]&&!prog.done[qid(i,qi)]).length;show(`<h2>${DATA[i][0]}</h2><p class="small">Correct questions disappear. Wrong questions return to the pool.</p><p>${d}/${DATA[i][1].length} solved • ${w} wrong</p><button class="btn ok" onclick="question(${i},0)">Start Random Question</button><button class="btn ghost" onclick="question(${i},1)">Practice Wrong Questions</button><button class="btn ghost" onclick="closeM()">Close</button>`)}function question(i,wrong){let o=choose(i,wrong);if(!o){show(`<h2>${DATA[i][0]}</h2><p>No ${wrong?'wrong':'available'} questions here right now.</p><button class="btn ok" onclick="portal(${i})">Back</button>`);return}show(`<h2>${DATA[i][0]}</h2><div class="answer"><b>Question:</b>\n${o.q[0]}</div><textarea id="a">${prog.ans[o.id]||''}</textarea><button class="btn ok" onclick="review(${i},${o.qi},${wrong?1:0})">Submit Answer</button><button class="btn ghost" onclick="portal(${i})">Back</button>`)}function review(i,qi,wrong){let id=qid(i,qi),q=DATA[i][1][qi];prog.ans[id]=a.value;save();show(`<h2>Review</h2><div class="answer"><b>Question:</b>\n${q[0]}</div><div class="answer"><b>Your answer:</b>\n${prog.ans[id]||'(empty)'}</div><div class="answer"><b>Correct answer:</b>\n${q[1]}</div><button class="btn ok" onclick="mark(${i},${qi},${wrong},1)">Yes, it was correct</button><button class="btn bad" onclick="mark(${i},${qi},${wrong},0)">No, it wasn't</button>`)}function mark(i,qi,wrong,ok){let id=qid(i,qi);if(ok){prog.done[id]=1;delete prog.wrong[id];prog.score+=wrong?8:10;prog.streak++;prog.best=Math.max(prog.best||0,prog.streak)}else{prog.wrong[id]=1;prog.streak=0}save();show(`<h2>${ok?'Saved as correct':'Returned to pool'}</h2><button class="btn ok" onclick="question(${i},${wrong})">Next Question</button><button class="btn ghost" onclick="portal(${i})">Back to Portal</button>`)}function stats(){show(`<h2>Progress</h2><p>Score: ${prog.score}</p><p>Solved: ${Object.keys(prog.done).length}/${DATA.length*3}</p><p>Best streak: ${prog.best||0}</p><button class="btn bad" onclick="reset()">Reset Progress</button><button class="btn ghost" onclick="logout()">Logout</button>`)}function help(){show('<h2>How to Play</h2><p>Login with Gabby / 1234. Move with WASD, stand near a portal and press E. Correct questions disappear. Wrong questions stay in the random pool.</p><button class="btn ok" onclick="closeM()">Got it</button>')}function reset(){localStorage.removeItem(KEY);prog=JSON.parse(localStorage[KEY]||'{"score":0,"streak":0,"best":0,"done":{},"wrong":{},"ans":{}}');closeM();save()}function logout(){location.reload()}function show(h){open=true;panel.innerHTML=h;modal.style.display='grid'}function closeM(){open=false;modal.style.display='none'}function clamp(n,a,b){return Math.max(a,Math.min(b,n))}</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DiplomaEZ</title>
+<style>
+:root{--bg:#0c1609;--panel:rgba(10,16,12,.92);--line:rgba(255,255,255,.13);--text:#f4ffe8;--muted:#c5d9c0;--green:#bfff78}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif}canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+.screen{position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(86,140,35,.95),rgba(5,9,5,.98));padding:18px}.card{background:var(--panel);border:1px solid var(--line);border-radius:22px;box-shadow:0 24px 70px rgba(0,0,0,.45);padding:24px;width:min(92vw,470px);max-height:92vh;overflow:auto}.badge{display:inline-block;border-radius:999px;background:rgba(190,255,120,.14);border:1px solid rgba(190,255,120,.25);padding:7px 12px;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#e8ffd0}h1{font-size:42px;line-height:1;margin:14px 0 12px}h2{margin:0 0 10px;font-size:30px}h3{margin:0 0 8px}.muted{color:var(--muted);line-height:1.5}.hint{color:#ffeaa3}.error{min-height:22px;color:#ffb6b6;font-weight:700}label{display:block;margin:12px 0 6px;font-weight:800}input,textarea{width:100%;border-radius:13px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:white;padding:13px;outline:none;font:inherit}input:focus,textarea:focus{border-color:#bfff78;box-shadow:0 0 0 3px rgba(191,255,120,.12)}textarea{min-height:130px;resize:vertical;line-height:1.55}
+button{border:0;border-radius:13px;padding:12px 15px;margin:8px 8px 0 0;font-weight:900;cursor:pointer;font:inherit}.primary{background:linear-gradient(#d7ff9b,#85ee56);color:#102008}.secondary{background:rgba(255,255,255,.08);color:var(--text);border:1px solid rgba(255,255,255,.14)}.danger{background:rgba(255,90,90,.18);color:#ffd6d6;border:1px solid rgba(255,90,90,.28)}
+.hud{position:fixed;z-index:10;top:14px;left:14px;right:14px;display:none;gap:12px;justify-content:space-between;align-items:flex-start;pointer-events:none}.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px 14px;box-shadow:0 14px 36px rgba(0,0,0,.28)}.hud-left{display:flex;gap:12px;align-items:center}.hud-left span,.hud-right span{color:var(--muted)}.hud-right{text-align:right}.prompt{position:fixed;z-index:12;left:50%;bottom:78px;transform:translateX(-50%);display:none;background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:12px 18px;font-weight:900;box-shadow:0 16px 36px rgba(0,0,0,.32)}
+.side{position:fixed;z-index:9;right:14px;top:94px;width:310px;max-height:calc(100vh - 112px);overflow:auto;display:none;background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:15px;box-shadow:0 16px 36px rgba(0,0,0,.32)}.topic-row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:14px}.topic-row:last-child{border-bottom:0}.pill{white-space:nowrap;align-self:center;border-radius:999px;padding:4px 8px;background:rgba(120,255,120,.14);color:#bfffbd;font-size:12px;font-weight:900}.pill.done{background:rgba(255,226,120,.16);color:#ffe895}
+.modal{position:fixed;inset:0;z-index:40;display:none;place-items:center;background:rgba(0,0,0,.66);backdrop-filter:blur(3px);padding:16px}.modal-box{width:min(94vw,850px);max-height:88vh;overflow:auto;background:#111913;border:1px solid var(--line);border-radius:22px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.5)}.qbox,.answer{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:15px;margin:14px 0}.answer{white-space:pre-wrap;line-height:1.6}.chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.chip{border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.08);font-size:12px;font-weight:900}
+.toast{position:fixed;z-index:70;left:50%;top:84px;transform:translateX(-50%);display:none;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 18px;box-shadow:0 14px 36px rgba(0,0,0,.3)}
+@media(max-width:1000px){.side{display:none!important}.hud{display:block}.hud-right{text-align:left;margin-top:8px}.hud-left{justify-content:space-between}}@media(max-width:640px){h1{font-size:34px}.card{padding:20px}.modal-box{padding:18px}.hud{left:8px;right:8px;top:8px}.panel{font-size:13px}button{width:100%;margin-right:0}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="loginScreen" class="screen">
+  <div class="card">
+    <div class="badge">DiplomaEZ</div>
+    <h1>Login</h1>
+    <p class="muted">Enter the study arena and continue saved progress.</p>
+    <label for="loginId">ID</label>
+    <input id="loginId" autocomplete="username" placeholder="Gabby">
+    <label for="loginPass">Password</label>
+    <input id="loginPass" type="password" autocomplete="current-password" placeholder="1234">
+    <button id="loginButton" class="primary">Enter Arena</button>
+    <p class="hint">ID: <b>Gabby</b> &nbsp; PASS: <b>1234</b></p>
+    <p id="loginMessage" class="error"></p>
+  </div>
+</div>
+
+<div id="hud" class="hud">
+  <div class="panel hud-left"><b>DiplomaEZ</b><span>WASD / arrows move • E enter • T stats • H help</span></div>
+  <div class="panel hud-right"><b id="scoreText">Score 0</b><br><span id="progressText">Solved 0/0</span><br><span id="streakText">Streak 0</span></div>
+</div>
+<div id="side" class="side"><h3>Topic Portals</h3><div id="topicList"></div></div>
+<div id="prompt" class="prompt">Press E</div>
+<div id="modal" class="modal"><div id="modalBox" class="modal-box"></div></div>
+<div id="toast" class="toast"></div>
+
+<script>
+(function(){
+'use strict';
+
+const LOGIN_ID = 'gabby';
+const LOGIN_PASS = '1234';
+const STORAGE_KEY = 'diplomaez_stable_progress_v1';
+
+const TOPICS = [
+  { title:'Data Structures', questions:[
+    ['Stack vs queue?', 'A stack is LIFO: last in, first out. A queue is FIFO: first in, first out.'],
+    ['Array vs linked list?', 'An array has fast indexed access and contiguous memory. A linked list is made of connected nodes and is flexible for insertions and deletions.'],
+    ['Hash table use?', 'A hash table stores key-value pairs and uses a hash function for fast average lookup, insert and delete.']
+  ]},
+  { title:'GoF Patterns', questions:[
+    ['Singleton intent?', 'Singleton ensures that a class has only one instance and provides a global access point to it.'],
+    ['Factory Method?', 'Factory Method defines an interface for creating objects but lets subclasses decide which concrete class to instantiate.'],
+    ['Observer pattern?', 'Observer creates a one-to-many dependency so observers are notified when the subject changes.']
+  ]},
+  { title:'Compilers', questions:[
+    ['Lexical analysis?', 'Lexical analysis transforms source code characters into tokens such as identifiers, keywords, operators and literals.'],
+    ['Syntax vs semantic analysis?', 'Syntax analysis checks grammar and structure. Semantic analysis checks meaning, such as types and declarations.'],
+    ['Code generation?', 'Code generation converts an intermediate representation into target code such as bytecode, assembly or machine code.']
+  ]},
+  { title:'Machine Learning', questions:[
+    ['Supervised learning?', 'Supervised learning trains a model on labeled examples where the expected output is known.'],
+    ['Clustering?', 'Clustering is unsupervised learning that groups similar data points without predefined labels.'],
+    ['Overfitting?', 'Overfitting means the model learns training data too specifically and performs poorly on unseen data.']
+  ]},
+  { title:'GPUs and CUDA', questions:[
+    ['Why are GPUs useful?', 'GPUs contain many cores and can perform many similar operations in parallel, which is useful for data-parallel tasks.'],
+    ['What is CUDA?', 'CUDA is NVIDIA technology that allows developers to run general-purpose parallel programs on GPUs.'],
+    ['CUDA kernel?', 'A CUDA kernel is a function executed on the GPU by many threads in parallel.']
+  ]},
+  { title:'Algorithms', questions:[
+    ['Brute force?', 'Brute force tries all possible solutions. It is simple, but often inefficient for large inputs.'],
+    ['Divide and conquer?', 'Divide and conquer splits a problem into smaller subproblems, solves them and combines the results.'],
+    ['Dynamic programming?', 'Dynamic programming stores results of overlapping subproblems to avoid repeated work.']
+  ]},
+  { title:'Security', questions:[
+    ['SQL injection?', 'SQL injection is an attack where malicious SQL is inserted through input. It is prevented with parameterized queries and validation.'],
+    ['Why hash passwords?', 'Passwords are hashed so original passwords are not stored directly and cannot be read after a database leak.'],
+    ['Least privilege?', 'Least privilege means giving users and software only the access needed for their task.']
+  ]},
+  { title:'RAM and Turing', questions:[
+    ['RAM model purpose?', 'The RAM model is used for platform-independent algorithm analysis where basic operations usually take constant time.'],
+    ['Turing machine?', 'A Turing machine is a theoretical model of computation with a tape, head, states and transition rules.'],
+    ['Why models matter?', 'They help us reason formally about what can be computed and how efficiently.']
+  ]},
+  { title:'RISC', questions:[
+    ['RISC meaning?', 'RISC means Reduced Instruction Set Computer, based on simpler instructions executed efficiently.'],
+    ['Why good for pipelining?', 'RISC instructions are simple and uniform, so pipeline stages are more predictable.'],
+    ['Instruction pipeline?', 'A pipeline overlaps stages of multiple instructions to improve throughput.']
+  ]},
+  { title:'Data Models', questions:[
+    ['Relational model?', 'A relational model stores data in tables with rows and columns and uses keys to define relationships.'],
+    ['Primary key?', 'A primary key uniquely identifies each row in a table.'],
+    ['Foreign key?', 'A foreign key references a primary key in another table and supports referential integrity.']
+  ]},
+  { title:'Automata', questions:[
+    ['Alphabet?', 'An alphabet is a finite non-empty set of symbols used to form strings.'],
+    ['Finite automaton?', 'A finite automaton is a state machine that recognizes regular languages.'],
+    ['Grammar?', 'A grammar is a set of production rules used to generate strings in a language.']
+  ]},
+  { title:'Paradigms', questions:[
+    ['Imperative programming?', 'Imperative programming describes step by step how the computation should happen.'],
+    ['Declarative programming?', 'Declarative programming describes what result is desired, not every control-flow step.'],
+    ['Object-oriented programming?', 'Object-oriented programming organizes software around objects that combine state and behavior.']
+  ]},
+  { title:'Data Types', questions:[
+    ['Static typing?', 'Static typing checks variable types before runtime, usually at compile time.'],
+    ['Dynamic typing?', 'Dynamic typing checks types during runtime.'],
+    ['Dynamic memory allocation?', 'Dynamic memory allocation reserves memory while the program is running, usually on the heap.']
+  ]},
+  { title:'Techniques', questions:[
+    ['Recursion parts?', 'A recursive function needs a base case and a recursive step that moves toward the base case.'],
+    ['Function parameter?', 'A parameter is a variable through which a function receives input values.'],
+    ['Control flow?', 'Control flow is the order in which program statements are executed.']
+  ]},
+  { title:'Application Development', questions:[
+    ['JVM platform independence?', 'Java compiles to bytecode, and the JVM on each platform executes that bytecode.'],
+    ['Bytecode?', 'Bytecode is intermediate code designed to be executed by a virtual machine.'],
+    ['Exception?', 'An exception is a mechanism for handling abnormal situations separately from normal control flow.']
+  ]},
+  { title:'Architectures', questions:[
+    ['Von Neumann architecture?', 'Instructions and data are stored in the same memory and processed by the CPU.'],
+    ['Von Neumann bottleneck?', 'It is the performance limitation caused by sharing the same path for instructions and data.'],
+    ['Cache memory?', 'Cache is small fast memory near the CPU that stores frequently used data.']
+  ]},
+  { title:'Numbers', questions:[
+    ['Why binary?', 'Digital hardware naturally represents information using two states, usually 0 and 1.'],
+    ['Two’s complement?', 'Two’s complement is a common representation for signed binary integers.'],
+    ['UTF-8 importance?', 'UTF-8 supports Unicode characters while remaining compatible with ASCII for basic characters.']
+  ]},
+  { title:'Final State', questions:[
+    ['Better monitoring?', 'Monitoring can be improved with centralized logs, tracing, dashboards, alerts, correlation IDs and health checks.'],
+    ['Async integration benefit?', 'Asynchronous communication decouples systems, improves resilience and prevents one slow system from blocking another.'],
+    ['Message queue?', 'A message queue stores messages between producers and consumers so systems can communicate asynchronously.']
+  ]}
+];
+
+const ui = {};
+const state = {
+  loggedIn:false,
+  modalOpen:false,
+  started:false,
+  keys:{},
+  dpr:1,
+  world:{w:2800,h:1700},
+  player:{x:1400,y:840,speed:270,step:0},
+  camera:{x:1400,y:840},
+  nearest:null,
+  last:0,
+  portals:[],
+  grass:[],
+  progress:loadProgress()
+};
+
+document.addEventListener('DOMContentLoaded', init);
+
+function init(){
+  ui.canvas = document.getElementById('game');
+  ui.ctx = ui.canvas.getContext('2d');
+  ui.loginScreen = document.getElementById('loginScreen');
+  ui.loginId = document.getElementById('loginId');
+  ui.loginPass = document.getElementById('loginPass');
+  ui.loginButton = document.getElementById('loginButton');
+  ui.loginMessage = document.getElementById('loginMessage');
+  ui.hud = document.getElementById('hud');
+  ui.side = document.getElementById('side');
+  ui.topicList = document.getElementById('topicList');
+  ui.prompt = document.getElementById('prompt');
+  ui.modal = document.getElementById('modal');
+  ui.modalBox = document.getElementById('modalBox');
+  ui.scoreText = document.getElementById('scoreText');
+  ui.progressText = document.getElementById('progressText');
+  ui.streakText = document.getElementById('streakText');
+  ui.toast = document.getElementById('toast');
+
+  buildWorld();
+  resize();
+  draw(0);
+  updateHud();
+  renderTopicList();
+
+  ui.loginButton.addEventListener('click', doLogin);
+  ui.loginId.addEventListener('keydown', e => { if(e.key === 'Enter') ui.loginPass.focus(); });
+  ui.loginPass.addEventListener('keydown', e => { if(e.key === 'Enter') doLogin(); });
+  ui.modal.addEventListener('click', e => { if(e.target === ui.modal) closeModal(); });
+
+  window.addEventListener('resize', resize);
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', e => state.keys[e.key.toLowerCase()] = false);
+
+  setTimeout(()=> ui.loginId.focus(), 100);
+}
+
+function doLogin(){
+  const id = ui.loginId.value.trim().toLowerCase();
+  const pass = ui.loginPass.value.trim();
+  if(id === LOGIN_ID && pass === LOGIN_PASS){
+    state.loggedIn = true;
+    ui.loginMessage.textContent = '';
+    ui.loginScreen.style.display = 'none';
+    ui.hud.style.display = 'flex';
+    ui.side.style.display = 'block';
+    toast('Welcome, Gabby.');
+    if(!state.started){
+      state.started = true;
+      requestAnimationFrame(loop);
+    }
+  } else {
+    ui.loginMessage.textContent = 'Wrong ID or password.';
+  }
+}
+
+function onKeyDown(e){
+  state.keys[e.key.toLowerCase()] = true;
+  if(e.key === 'Escape' && state.modalOpen) closeModal();
+  if(!state.loggedIn || state.modalOpen) return;
+
+  const k = e.key.toLowerCase();
+  if(k === 'e' && state.nearest) openPortal(state.nearest.index);
+  if(k === 't') openStats();
+  if(k === 'h') openHelp();
+}
+
+function buildWorld(){
+  const cols = 5;
+  state.portals = TOPICS.map((topic, i) => ({
+    index:i,
+    title:topic.title,
+    x:310 + (i % cols) * 540,
+    y:280 + Math.floor(i / cols) * 360,
+    color:['#8eff87','#ffa7eb','#82efff','#ffe27f','#c59cff','#ffb089','#77fff3','#a2b7ff'][i % 8]
+  }));
+
+  let seed = 123456;
+  function rand(){
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  }
+  state.grass = [];
+  for(let i=0;i<260;i++){
+    state.grass.push({
+      x:130 + rand() * (state.world.w - 260),
+      y:130 + rand() * (state.world.h - 260),
+      h:12 + rand() * 28,
+      phase:rand() * 6.28,
+      color:rand() > .22 ? '#78ec72' : '#dd7d86'
+    });
+  }
+}
+
+function loadProgress(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(err){}
+  return { score:0, streak:0, bestStreak:0, done:{}, wrong:{}, answers:{}, attempts:{} };
+}
+
+function saveProgress(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.progress));
+}
+
+function qid(topicIndex, questionIndex){
+  return topicIndex + '_' + questionIndex;
+}
+
+function totalQuestions(){
+  return TOPICS.reduce((sum, topic) => sum + topic.questions.length, 0);
+}
+
+function solvedCount(){
+  return Object.keys(state.progress.done).length;
+}
+
+function topicSolved(index){
+  return TOPICS[index].questions.filter((_, qi) => state.progress.done[qid(index, qi)]).length;
+}
+
+function topicWrong(index){
+  return TOPICS[index].questions.filter((_, qi) => state.progress.wrong[qid(index, qi)] && !state.progress.done[qid(index, qi)]).length;
+}
+
+function updateHud(){
+  ui.scoreText.textContent = 'Score ' + state.progress.score;
+  ui.progressText.textContent = 'Solved ' + solvedCount() + '/' + totalQuestions();
+  ui.streakText.textContent = 'Streak ' + state.progress.streak;
+}
+
+function renderTopicList(){
+  ui.topicList.innerHTML = '';
+  TOPICS.forEach((topic, i) => {
+    const done = topicSolved(i);
+    const row = document.createElement('div');
+    row.className = 'topic-row';
+    row.innerHTML = '<div><b>' + escapeHtml(topic.title) + '</b><div class="muted">' + topic.questions.length + ' questions</div></div>' +
+      '<span class="pill ' + (done === topic.questions.length ? 'done' : '') + '">' +
+      (done === topic.questions.length ? 'Cleared' : (topic.questions.length - done) + ' left') + '</span>';
+    ui.topicList.appendChild(row);
+  });
+}
+
+function resize(){
+  state.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  ui.canvas.width = Math.floor(window.innerWidth * state.dpr);
+  ui.canvas.height = Math.floor(window.innerHeight * state.dpr);
+  ui.canvas.style.width = window.innerWidth + 'px';
+  ui.canvas.style.height = window.innerHeight + 'px';
+}
+
+function loop(ts){
+  const dt = Math.min(0.033, (ts - state.last) / 1000 || 0.016);
+  state.last = ts;
+  update(dt);
+  draw(ts / 1000);
+  requestAnimationFrame(loop);
+}
+
+function update(dt){
+  if(!state.loggedIn || state.modalOpen) return;
+
+  let dx = 0, dy = 0;
+  if(state.keys.w || state.keys.arrowup) dy -= 1;
+  if(state.keys.s || state.keys.arrowdown) dy += 1;
+  if(state.keys.a || state.keys.arrowleft) dx -= 1;
+  if(state.keys.d || state.keys.arrowright) dx += 1;
+
+  const len = Math.hypot(dx, dy) || 1;
+  if(dx || dy){
+    state.player.x = clamp(state.player.x + dx / len * state.player.speed * dt, 120, state.world.w - 120);
+    state.player.y = clamp(state.player.y + dy / len * state.player.speed * dt, 120, state.world.h - 120);
+    state.player.step += dt * 9;
+  }
+
+  state.camera.x += (state.player.x - state.camera.x) * 0.09;
+  state.camera.y += (state.player.y - state.camera.y) * 0.09;
+
+  let best = null;
+  let bestDist = Infinity;
+  state.portals.forEach(portal => {
+    const dist = Math.hypot(portal.x - state.player.x, portal.y - state.player.y);
+    if(dist < bestDist){ bestDist = dist; best = portal; }
+  });
+  if(best && bestDist < 130){
+    state.nearest = best;
+    ui.prompt.textContent = 'Press E to enter ' + best.title;
+    ui.prompt.style.display = 'block';
+  } else {
+    state.nearest = null;
+    ui.prompt.style.display = 'none';
+  }
+}
+
+function draw(time){
+  const ctx = ui.ctx;
+  const dpr = state.dpr;
+  const W = ui.canvas.width, H = ui.canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#88c816');
+  bg.addColorStop(.55, '#3f641a');
+  bg.addColorStop(1, '#13230e');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.translate(-(state.camera.x - window.innerWidth / 2), -(state.camera.y - window.innerHeight / 2));
+
+  drawMap(ctx);
+  drawGrass(ctx, time);
+  state.portals.forEach(portal => drawPortal(ctx, portal, time));
+  drawPlayer(ctx, time);
+
+  ctx.restore();
+}
+
+function drawMap(ctx){
+  rounded(ctx, 80, 80, state.world.w - 160, state.world.h - 160, 52, '#6f8b42', '#91a66d', 4);
+  ctx.strokeStyle = 'rgba(0,0,0,.18)';
+  ctx.lineWidth = 1;
+  for(let x=110; x<state.world.w-110; x+=50){
+    ctx.beginPath(); ctx.moveTo(x,110); ctx.lineTo(x,state.world.h-110); ctx.stroke();
+  }
+  for(let y=110; y<state.world.h-110; y+=50){
+    ctx.beginPath(); ctx.moveTo(110,y); ctx.lineTo(state.world.w-110,y); ctx.stroke();
+  }
+  const glow = ctx.createRadialGradient(1400,840,20,1400,840,160);
+  glow.addColorStop(0,'rgba(205,255,120,.55)');
+  glow.addColorStop(1,'rgba(205,255,120,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(1400,840,160,0,Math.PI*2); ctx.fill();
+}
+
+function drawGrass(ctx, time){
+  state.grass.forEach(g => {
+    const sway = Math.sin(time * 1.5 + g.phase) * 4;
+    ctx.strokeStyle = g.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(g.x, g.y + g.h * .45);
+    ctx.quadraticCurveTo(g.x + sway, g.y, g.x, g.y - g.h);
+    ctx.stroke();
+  });
+}
+
+function drawPortal(ctx, portal, time){
+  const done = topicSolved(portal.index) === TOPICS[portal.index].questions.length;
+  const color = done ? '#ffe680' : portal.color;
+
+  ctx.fillStyle = 'rgba(0,0,0,.30)';
+  ctx.beginPath();
+  ctx.ellipse(portal.x, portal.y + 18, 76, 24, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  const glow = ctx.createRadialGradient(portal.x, portal.y, 6, portal.x, portal.y, 92);
+  glow.addColorStop(0, hexToRgba(color, .65));
+  glow.addColorStop(1, hexToRgba(color, 0));
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(portal.x, portal.y, 86 + Math.sin(time * 2 + portal.index) * 5, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#dacb9b';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.ellipse(portal.x, portal.y, 58, 18, 0, 0, Math.PI*2);
+  ctx.stroke();
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 4;
+  for(let i=0;i<3;i++){
+    ctx.beginPath();
+    ctx.ellipse(portal.x, portal.y, 45 + i*8 + Math.sin(time*2.5+i)*2, 12+i*4, 0, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  rounded(ctx, portal.x - 44, portal.y - 36, 12, 54, 6, '#7f8b72');
+  rounded(ctx, portal.x + 32, portal.y - 36, 12, 54, 6, '#7f8b72');
+
+  ctx.font = '700 15px system-ui';
+  const width = ctx.measureText(portal.title).width;
+  rounded(ctx, portal.x - width/2 - 14, portal.y - 78, width + 28, 28, 14, 'rgba(8,12,10,.86)', 'rgba(255,255,255,.1)', 1);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#f8ffd8';
+  ctx.fillText(portal.title, portal.x, portal.y - 58);
+
+  if(done){
+    ctx.font = '900 24px system-ui';
+    ctx.fillText('✓', portal.x, portal.y + 5);
+  }
+}
+
+function drawPlayer(ctx, time){
+  const bob = Math.sin(state.player.step || time) * 2;
+  ctx.save();
+  ctx.translate(state.player.x, state.player.y + bob);
+
+  ctx.fillStyle = 'rgba(0,0,0,.34)';
+  ctx.beginPath(); ctx.ellipse(0,36,35,14,0,0,Math.PI*2); ctx.fill();
+
+  ctx.strokeStyle = '#442f1c';
+  ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(18,0); ctx.lineTo(45,30); ctx.stroke();
+  ctx.fillStyle = '#9cff8e';
+  ctx.beginPath(); ctx.arc(47,31,8,0,Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = '#ff8f71';
+  ctx.beginPath();
+  ctx.moveTo(0,-5); ctx.lineTo(31,36); ctx.lineTo(-31,36); ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = '#5f3aa0';
+  ctx.beginPath();
+  ctx.moveTo(-12,-58); ctx.lineTo(4,-94); ctx.lineTo(21,-54); ctx.quadraticCurveTo(6,-62,-12,-58); ctx.fill();
+
+  ctx.fillStyle = '#eadcc5';
+  ctx.beginPath(); ctx.arc(0,-28,34,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#2d241e';
+  ctx.font = '900 24px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText('G',0,-20);
+
+  ctx.restore();
+}
+
+function openPortal(index){
+  const topic = TOPICS[index];
+  const solved = topicSolved(index);
+  const wrong = topicWrong(index);
+  showModal(
+    '<h2>' + escapeHtml(topic.title) + '</h2>' +
+    '<p class="muted">Correct questions disappear. Wrong questions return to the random pool.</p>' +
+    '<div class="chips"><span class="chip">' + solved + '/' + topic.questions.length + ' solved</span><span class="chip">' + wrong + ' wrong</span></div>' +
+    '<div class="qbox">Choose a random question from this topic.</div>' +
+    '<button class="primary" data-action="random">Start Random Question</button>' +
+    '<button class="secondary" data-action="wrong">Practice Wrong Questions</button>' +
+    '<button class="secondary" data-action="close">Close</button>'
+  );
+  ui.modalBox.querySelector('[data-action="random"]').onclick = () => startQuestion(index, false);
+  ui.modalBox.querySelector('[data-action="wrong"]').onclick = () => startQuestion(index, true);
+  ui.modalBox.querySelector('[data-action="close"]').onclick = closeModal;
+}
+
+function chooseQuestion(index, wrongOnly){
+  let list = TOPICS[index].questions.map((q, qi) => ({ qi, q, id: qid(index, qi) }))
+    .filter(item => !state.progress.done[item.id]);
+
+  if(wrongOnly){
+    list = list.filter(item => state.progress.wrong[item.id]);
+  }
+
+  if(!list.length) return null;
+  const fresh = list.filter(item => !state.progress.wrong[item.id]);
+  const missed = list.filter(item => state.progress.wrong[item.id]);
+
+  if(!wrongOnly && fresh.length && missed.length){
+    return Math.random() < .7 ? pick(fresh) : pick(missed);
+  }
+  return pick(list);
+}
+
+function startQuestion(index, wrongOnly){
+  const selected = chooseQuestion(index, wrongOnly);
+  const topic = TOPICS[index];
+
+  if(!selected){
+    showModal(
+      '<h2>' + escapeHtml(topic.title) + '</h2>' +
+      '<p class="muted">' + (wrongOnly ? 'No wrong questions in this topic right now.' : 'This topic is fully cleared.') + '</p>' +
+      '<button class="primary" data-action="back">Back to Portal</button>' +
+      '<button class="secondary" data-action="close">Close</button>'
+    );
+    ui.modalBox.querySelector('[data-action="back"]').onclick = () => openPortal(index);
+    ui.modalBox.querySelector('[data-action="close"]').onclick = closeModal;
+    return;
+  }
+
+  showQuestion(index, selected, wrongOnly);
+}
+
+function showQuestion(index, selected, wrongOnly){
+  const topic = TOPICS[index];
+  const savedAnswer = state.progress.answers[selected.id] || '';
+  showModal(
+    '<h2>' + escapeHtml(topic.title) + '</h2>' +
+    '<div class="chips"><span class="chip">' + (wrongOnly ? 'Wrong practice' : 'Random mission') + '</span><span class="chip">Question ' + (selected.qi+1) + '/' + topic.questions.length + '</span></div>' +
+    '<div class="qbox"><b>Question</b><br><br>' + escapeHtml(selected.q[0]) + '</div>' +
+    '<label for="answerInput">Your answer</label>' +
+    '<textarea id="answerInput" placeholder="Type your answer here...">' + escapeHtml(savedAnswer) + '</textarea>' +
+    '<button class="primary" data-action="submit">Submit Answer</button>' +
+    '<button class="secondary" data-action="back">Back to Portal</button>'
+  );
+  ui.modalBox.querySelector('[data-action="submit"]').onclick = () => reviewAnswer(index, selected, wrongOnly);
+  ui.modalBox.querySelector('[data-action="back"]').onclick = () => openPortal(index);
+  document.getElementById('answerInput').focus();
+}
+
+function reviewAnswer(index, selected, wrongOnly){
+  const answer = document.getElementById('answerInput').value.trim();
+  state.progress.answers[selected.id] = answer;
+  saveProgress();
+
+  showModal(
+    '<h2>Review Your Answer</h2>' +
+    '<div class="answer"><b>Question:</b>\n' + escapeHtml(selected.q[0]) + '</div>' +
+    '<div class="answer"><b>Your answer:</b>\n' + escapeHtml(answer || '(empty)') + '</div>' +
+    '<div class="answer"><b>Correct answer:</b>\n' + escapeHtml(selected.q[1]) + '</div>' +
+    '<button class="primary" data-action="yes">Yes, it was correct</button>' +
+    '<button class="danger" data-action="no">No, it was not</button>' +
+    '<button class="secondary" data-action="edit">Back and Edit</button>'
+  );
+  ui.modalBox.querySelector('[data-action="yes"]').onclick = () => finishQuestion(index, selected, wrongOnly, true);
+  ui.modalBox.querySelector('[data-action="no"]').onclick = () => finishQuestion(index, selected, wrongOnly, false);
+  ui.modalBox.querySelector('[data-action="edit"]').onclick = () => showQuestion(index, selected, wrongOnly);
+}
+
+function finishQuestion(index, selected, wrongOnly, correct){
+  const id = selected.id;
+  state.progress.attempts[id] = (state.progress.attempts[id] || 0) + 1;
+
+  if(correct){
+    state.progress.done[id] = true;
+    delete state.progress.wrong[id];
+    state.progress.score += wrongOnly ? 8 : 10;
+    state.progress.streak += 1;
+    state.progress.bestStreak = Math.max(state.progress.bestStreak || 0, state.progress.streak);
+  } else {
+    state.progress.wrong[id] = true;
+    state.progress.streak = 0;
+  }
+
+  saveProgress();
+  updateHud();
+  renderTopicList();
+
+  const remaining = TOPICS[index].questions.length - topicSolved(index);
+  showModal(
+    '<h2>' + (correct ? 'Saved as Correct' : 'Returned to Pool') + '</h2>' +
+    '<p class="muted">' + (correct ? 'This question will not appear again.' : 'This question can appear again later.') + '</p>' +
+    '<div class="chips"><span class="chip">Remaining in topic: ' + remaining + '</span><span class="chip">Score: ' + state.progress.score + '</span><span class="chip">Streak: ' + state.progress.streak + '</span></div>' +
+    '<button class="primary" data-action="next">Next Question</button>' +
+    '<button class="secondary" data-action="portal">Back to Portal</button>' +
+    '<button class="secondary" data-action="close">Close</button>'
+  );
+  ui.modalBox.querySelector('[data-action="next"]').onclick = () => startQuestion(index, wrongOnly);
+  ui.modalBox.querySelector('[data-action="portal"]').onclick = () => openPortal(index);
+  ui.modalBox.querySelector('[data-action="close"]').onclick = closeModal;
+}
+
+function openStats(){
+  const wrongCount = Object.keys(state.progress.wrong).filter(id => !state.progress.done[id]).length;
+  showModal(
+    '<h2>Progress</h2>' +
+    '<div class="chips"><span class="chip">Score: ' + state.progress.score + '</span><span class="chip">Solved: ' + solvedCount() + '/' + totalQuestions() + '</span><span class="chip">Wrong queue: ' + wrongCount + '</span><span class="chip">Best streak: ' + (state.progress.bestStreak || 0) + '</span></div>' +
+    '<button class="danger" data-action="reset">Reset Progress</button>' +
+    '<button class="secondary" data-action="logout">Logout</button>' +
+    '<button class="primary" data-action="close">Close</button>'
+  );
+  ui.modalBox.querySelector('[data-action="reset"]').onclick = resetProgress;
+  ui.modalBox.querySelector('[data-action="logout"]').onclick = logout;
+  ui.modalBox.querySelector('[data-action="close"]').onclick = closeModal;
+}
+
+function openHelp(){
+  showModal(
+    '<h2>How to Play</h2>' +
+    '<div class="qbox"><p>Login with <b>Gabby</b> / <b>1234</b>.</p><p>Move with <b>WASD</b> or arrow keys. Stand near a portal and press <b>E</b>.</p><p>Correct questions disappear forever for this save. Wrong questions return to the random pool.</p></div>' +
+    '<button class="primary" data-action="close">Got it</button>'
+  );
+  ui.modalBox.querySelector('[data-action="close"]').onclick = closeModal;
+}
+
+function resetProgress(){
+  if(!confirm('Reset all DiplomaEZ progress?')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  state.progress = loadProgress();
+  updateHud();
+  renderTopicList();
+  closeModal();
+  toast('Progress reset.');
+}
+
+function logout(){
+  state.loggedIn = false;
+  state.modalOpen = false;
+  ui.modal.style.display = 'none';
+  ui.hud.style.display = 'none';
+  ui.side.style.display = 'none';
+  ui.prompt.style.display = 'none';
+  ui.loginScreen.style.display = 'grid';
+  ui.loginPass.value = '';
+  setTimeout(()=>ui.loginId.focus(), 100);
+}
+
+function showModal(html){
+  state.modalOpen = true;
+  ui.modalBox.innerHTML = html;
+  ui.modal.style.display = 'grid';
+}
+
+function closeModal(){
+  state.modalOpen = false;
+  ui.modal.style.display = 'none';
+  ui.modalBox.innerHTML = '';
+}
+
+let toastTimer = 0;
+function toast(text){
+  ui.toast.textContent = text;
+  ui.toast.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> ui.toast.style.display = 'none', 2200);
+}
+
+function escapeHtml(value){
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  })[ch]);
+}
+
+function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+function pick(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+
+function hexToRgba(hex, alpha){
+  const clean = hex.replace('#','');
+  const num = parseInt(clean, 16);
+  return 'rgba(' + ((num >> 16) & 255) + ',' + ((num >> 8) & 255) + ',' + (num & 255) + ',' + alpha + ')';
+}
+
+function rounded(ctx, x, y, w, h, r, fill, stroke, lineWidth){
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+  if(fill){ ctx.fillStyle = fill; ctx.fill(); }
+  if(stroke){ ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth || 1; ctx.stroke(); }
+  ctx.restore();
+}
+
+})();
+</script>
+</body>
+</html>
