@@ -26,12 +26,9 @@
     window.DIPLOMAEZ_TOPICS = JSON.parse(text);
 
     const script = document.createElement('script');
-    script.src = 'app.js?v=20260620-character';
+    script.src = 'app.js?v=20260620-settings-delete';
     script.onload = function () {
       console.log('DiplomaEZ loaded with', window.DIPLOMAEZ_TOPICS.length, 'topics.');
-      if (document.readyState !== 'loading') {
-        document.dispatchEvent(new Event('DOMContentLoaded'));
-      }
     };
     script.onerror = function () {
       setError('Game logic failed to load. Refresh the page.');
